@@ -16,19 +16,29 @@ import (
 func main() {
 	dsn := flag.String("dsn", "", "Database connection string")
 	dbType := flag.String("type", "", "Database type: mysql, postgres, sqlite (auto-detected if not specified)")
+	sqlFile := flag.String("sql-file", "dabble.sql", "SQL file to sync with the query window")
 	flag.Parse()
 
 	if *dsn == "" {
 		fmt.Fprintln(os.Stderr, "Error: -dsn flag is required")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Usage:")
-		fmt.Fprintln(os.Stderr, "  dabble -dsn 'connection_string' [-type mysql|postgres|sqlite]")
+		fmt.Fprintln(os.Stderr, "  dabble -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Examples:")
 		fmt.Fprintln(os.Stderr, "  MySQL:    dabble -dsn 'user:password@tcp(localhost:3306)/dbname'")
 		fmt.Fprintln(os.Stderr, "  Postgres: dabble -dsn 'postgres://user:password@localhost:5432/dbname'")
 		fmt.Fprintln(os.Stderr, "  SQLite:   dabble -dsn '/path/to/database.db'")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Options:")
+		fmt.Fprintln(os.Stderr, "  -sql-file  SQL file to sync queries (default: dabble.sql)")
 		os.Exit(1)
+	}
+
+	// Load initial SQL content from file (if it exists)
+	var initialSQL string
+	if data, err := os.ReadFile(*sqlFile); err == nil {
+		initialSQL = string(data)
 	}
 
 	// Auto-detect database type if not specified
@@ -62,7 +72,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(NewModel(db, detectedType), tea.WithAltScreen())
+	p := tea.NewProgram(NewModel(db, detectedType, *sqlFile, initialSQL), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
 		os.Exit(1)

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -131,6 +132,7 @@ type DetailView struct {
 type Model struct {
 	db            *sql.DB
 	dbType        string
+	sqlFile       string
 	textarea      textarea.Model
 	viewport      viewport.Model
 	focus         focusState
@@ -148,18 +150,24 @@ type Model struct {
 }
 
 // NewModel creates a new Model
-func NewModel(db *sql.DB, dbType string) Model {
+func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Enter SQL query..."
 	ta.Focus()
 	ta.SetWidth(80)
-	ta.SetHeight(3)
-	ta.ShowLineNumbers = false
+	ta.SetHeight(8)
+	ta.ShowLineNumbers = true
 	ta.KeyMap.InsertNewline.SetEnabled(true)
+
+	// Load initial SQL content
+	if initialSQL != "" {
+		ta.SetValue(initialSQL)
+	}
 
 	return Model{
 		db:       db,
 		dbType:   dbType,
+		sqlFile:  sqlFile,
 		textarea: ta,
 		focus:    focusQuery,
 	}
@@ -186,15 +194,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "f5":
-				// Generate UPDATE and close
+				// Generate UPDATE and append to query window
 				if m.queryMeta != nil && m.queryMeta.IsEditable {
 					updateSQL := m.generateUpdateSQL()
 					if updateSQL != "" {
-						m.textarea.SetValue(updateSQL)
+						m.appendQueryToTextarea(updateSQL)
 						m.focus = focusQuery
 						m.textarea.Focus()
 						m.detailView = nil
-						m.statusMessage = "UPDATE statement generated. Press Ctrl+Enter to execute."
+						m.statusMessage = "UPDATE statement appended. Press Ctrl+Enter to execute."
 						return m, nil
 					}
 					m.statusMessage = "No changes to update."
@@ -202,30 +210,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "f6":
-				// Generate DELETE and close
+				// Generate DELETE and append to query window
 				if m.queryMeta != nil && m.queryMeta.IsEditable {
 					deleteSQL := m.generateDeleteSQL()
 					if deleteSQL != "" {
-						m.textarea.SetValue(deleteSQL)
+						m.appendQueryToTextarea(deleteSQL)
 						m.focus = focusQuery
 						m.textarea.Focus()
 						m.detailView = nil
-						m.statusMessage = "DELETE statement generated. Press Ctrl+Enter to execute."
+						m.statusMessage = "DELETE statement appended. Press Ctrl+Enter to execute."
 						return m, nil
 					}
 				}
 				return m, nil
 
 			case "f7":
-				// Generate INSERT and close
+				// Generate INSERT and append to query window
 				if m.queryMeta != nil && m.queryMeta.IsEditable {
 					insertSQL := m.generateInsertSQL()
 					if insertSQL != "" {
-						m.textarea.SetValue(insertSQL)
+						m.appendQueryToTextarea(insertSQL)
 						m.focus = focusQuery
 						m.textarea.Focus()
 						m.detailView = nil
-						m.statusMessage = "INSERT statement generated. Press Ctrl+Enter to execute."
+						m.statusMessage = "INSERT statement appended. Press Ctrl+Enter to execute."
 						return m, nil
 					}
 				}
@@ -298,26 +306,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "ctrl+enter", "f5":
-			// Execute query
-			query := strings.TrimSpace(m.textarea.Value())
-			if query != "" {
-				m.lastQuery = query
-				m.result = m.executeQuery(query)
-				m.queryMeta = parseQueryMeta(query, m.result)
-				m.selectedRow = 0
-				m.currentPage = 0
-				if m.result.Error != nil {
-					m.statusMessage = fmt.Sprintf("Error: %v", m.result.Error)
-				} else {
-					m.totalPages = (len(m.result.Rows) + pageSize - 1) / pageSize
-					if m.totalPages == 0 {
-						m.totalPages = 1
-					}
-					m.statusMessage = fmt.Sprintf("Query returned %d rows", len(m.result.Rows))
-					if len(m.result.Rows) > 0 {
-						m.focus = focusResults
-						m.textarea.Blur()
-					}
+			// Execute the query under the cursor
+			query := m.getQueryUnderCursor()
+			if query == "" {
+				m.statusMessage = "No query under cursor. Queries must end with ';'"
+				return m, nil
+			}
+			m.lastQuery = query
+			m.result = m.executeQuery(query)
+			m.queryMeta = parseQueryMeta(query, m.result)
+			m.selectedRow = 0
+			m.currentPage = 0
+			// Save the SQL file after executing
+			m.saveToFile()
+			if m.result.Error != nil {
+				m.statusMessage = fmt.Sprintf("Error: %v", m.result.Error)
+			} else {
+				m.totalPages = (len(m.result.Rows) + pageSize - 1) / pageSize
+				if m.totalPages == 0 {
+					m.totalPages = 1
+				}
+				m.statusMessage = fmt.Sprintf("Query returned %d rows", len(m.result.Rows))
+				if len(m.result.Rows) > 0 {
+					m.focus = focusResults
+					m.textarea.Blur()
 				}
 			}
 			return m, nil
@@ -840,6 +852,112 @@ func extractTableName(tablePart string) string {
 	}
 
 	return parts[0]
+}
+
+// getQueryUnderCursor finds and returns the SQL query that contains the cursor position
+func (m Model) getQueryUnderCursor() string {
+	content := m.textarea.Value()
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+
+	// Get cursor line (0-indexed)
+	cursorLine := m.textarea.Line()
+
+	// Split content into lines and find which query block the cursor is in
+	lines := strings.Split(content, "\n")
+
+	// Calculate the character position at the start of the cursor line
+	cursorPos := 0
+	for i := 0; i < cursorLine && i < len(lines); i++ {
+		cursorPos += len(lines[i]) + 1 // +1 for newline
+	}
+	// Add some offset into the current line (middle of line is fine for finding the query)
+	if cursorLine < len(lines) {
+		cursorPos += len(lines[cursorLine]) / 2
+	}
+
+	// Find all semicolon positions
+	var semicolonPositions []int
+	for i, ch := range content {
+		if ch == ';' {
+			semicolonPositions = append(semicolonPositions, i)
+		}
+	}
+
+	// If no semicolons, there are no complete queries
+	if len(semicolonPositions) == 0 {
+		return ""
+	}
+
+	// Find which query segment contains the cursor
+	// Query segments are: [0, semi1], [semi1+1, semi2], [semi2+1, semi3], ...
+	queryStart := 0
+	for _, semiPos := range semicolonPositions {
+		if cursorPos <= semiPos {
+			// Cursor is within this query (from queryStart to semiPos)
+			query := strings.TrimSpace(content[queryStart : semiPos+1])
+			// Remove the trailing semicolon for execution
+			query = strings.TrimSuffix(query, ";")
+			query = strings.TrimSpace(query)
+			return query
+		}
+		queryStart = semiPos + 1
+	}
+
+	// Cursor is after the last semicolon - check if there's an incomplete query
+	// If so, return empty (no complete query under cursor)
+	remaining := strings.TrimSpace(content[queryStart:])
+	if remaining == "" {
+		// Cursor is right after last semicolon, return the last query
+		if len(semicolonPositions) > 0 {
+			lastSemi := semicolonPositions[len(semicolonPositions)-1]
+			prevStart := 0
+			if len(semicolonPositions) > 1 {
+				prevStart = semicolonPositions[len(semicolonPositions)-2] + 1
+			}
+			query := strings.TrimSpace(content[prevStart : lastSemi+1])
+			query = strings.TrimSuffix(query, ";")
+			query = strings.TrimSpace(query)
+			return query
+		}
+	}
+
+	// There's incomplete text after last semicolon - no complete query under cursor
+	return ""
+}
+
+// appendQueryToTextarea appends a SQL statement to the textarea and moves cursor to end
+func (m *Model) appendQueryToTextarea(sql string) {
+	current := m.textarea.Value()
+	var newContent string
+
+	if strings.TrimSpace(current) == "" {
+		newContent = sql + ";"
+	} else {
+		// Ensure current content ends properly
+		current = strings.TrimRight(current, " \t\n")
+		if !strings.HasSuffix(current, ";") {
+			current += ";"
+		}
+		newContent = current + "\n\n" + sql + ";"
+	}
+
+	m.textarea.SetValue(newContent)
+	// Move cursor to end
+	m.textarea.CursorEnd()
+	// Save to file
+	m.saveToFile()
+}
+
+// saveToFile saves the current textarea content to the SQL file
+func (m *Model) saveToFile() {
+	if m.sqlFile == "" {
+		return
+	}
+	content := m.textarea.Value()
+	// Write file, ignoring errors (we don't want to crash on save failure)
+	_ = os.WriteFile(m.sqlFile, []byte(content), 0644)
 }
 
 // executeQuery runs the SQL query and returns results

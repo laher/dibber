@@ -27,10 +27,16 @@ go build -o dabble .
 ## Usage
 
 ```bash
-dabble -dsn 'connection_string' [-type mysql|postgres|sqlite]
+dabble -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]
 ```
 
-The database type is auto-detected from the DSN format, but can be explicitly specified with `-type`.
+**Options:**
+- `-type` - Database type (auto-detected from DSN if not specified)
+- `-sql-file` - SQL file to sync with the query window (default: `dabble.sql`)
+
+The query window content is automatically loaded from and saved to the SQL file. Saves occur when:
+- Executing a query
+- Generating UPDATE/DELETE/INSERT statements
 
 ### Connection Examples
 
@@ -62,11 +68,25 @@ dabble -dsn ':memory:'  # In-memory database
 
 ### Query View
 
+The query editor supports multiple queries separated by semicolons (`;`). When you execute, only the query under the cursor is run.
+
 | Key | Action |
 |-----|--------|
-| `Ctrl+Enter` / `F5` | Execute query |
+| `Ctrl+Enter` / `F5` | Execute query under cursor |
 | `Tab` | Switch focus to results |
+| `↑` / `↓` | Scroll through queries |
 | `Esc` | Quit |
+
+**Multi-query example:**
+```sql
+SELECT * FROM users;
+
+SELECT * FROM orders
+WHERE status = 'pending';
+
+UPDATE users SET name = 'test' WHERE id = 1;
+```
+Position your cursor on any query and press `Ctrl+Enter` to execute just that query.
 
 ### Results View
 
@@ -113,7 +133,7 @@ When you're in the detail view, you can generate SQL statements:
 - **F6 (DELETE)**: Generates a `DELETE` statement for the current row
 - **F7 (INSERT)**: Generates an `INSERT` statement with all field values (excluding the ID, which is auto-generated)
 
-All generated statements are placed in the query editor for you to review and execute manually.
+All generated statements are **appended** to the query editor (not replacing existing content) and the cursor moves to the new query. Press `Ctrl+Enter` to execute.
 
 ## Supported Databases
 
