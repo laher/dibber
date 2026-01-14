@@ -87,14 +87,11 @@ var (
 			Foreground(lipgloss.Color("#AFAFAF"))
 
 	fieldInputStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("#5A5A5A")).
-			Padding(0, 1)
+			Foreground(lipgloss.Color("#AFAFAF"))
 
 	fieldInputFocusedStyle = lipgloss.NewStyle().
-				Border(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("#FF6B6B")).
-				Padding(0, 1)
+				Foreground(lipgloss.Color("#FAFAFA")).
+				Background(lipgloss.Color("#3A3A5A"))
 
 	readOnlyBadgeStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#FF6B6B")).
@@ -133,6 +130,7 @@ type DetailView struct {
 // Model is the main Bubble Tea model
 type Model struct {
 	db            *sql.DB
+	dbType        string
 	textarea      textarea.Model
 	viewport      viewport.Model
 	focus         focusState
@@ -150,7 +148,7 @@ type Model struct {
 }
 
 // NewModel creates a new Model
-func NewModel(db *sql.DB) Model {
+func NewModel(db *sql.DB, dbType string) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Enter SQL query..."
 	ta.Focus()
@@ -161,6 +159,7 @@ func NewModel(db *sql.DB) Model {
 
 	return Model{
 		db:       db,
+		dbType:   dbType,
 		textarea: ta,
 		focus:    focusQuery,
 	}
@@ -196,6 +195,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.textarea.Focus()
 						m.detailView = nil
 						m.statusMessage = "UPDATE statement generated. Press Ctrl+Enter to execute."
+						return m, nil
+					}
+					m.statusMessage = "No changes to update."
+				}
+				return m, nil
+
+			case "f6":
+				// Generate DELETE and close
+				if m.queryMeta != nil && m.queryMeta.IsEditable {
+					deleteSQL := m.generateDeleteSQL()
+					if deleteSQL != "" {
+						m.textarea.SetValue(deleteSQL)
+						m.focus = focusQuery
+						m.textarea.Focus()
+						m.detailView = nil
+						m.statusMessage = "DELETE statement generated. Press Ctrl+Enter to execute."
+						return m, nil
+					}
+				}
+				return m, nil
+
+			case "f7":
+				// Generate INSERT and close
+				if m.queryMeta != nil && m.queryMeta.IsEditable {
+					insertSQL := m.generateInsertSQL()
+					if insertSQL != "" {
+						m.textarea.SetValue(insertSQL)
+						m.focus = focusQuery
+						m.textarea.Focus()
+						m.detailView = nil
+						m.statusMessage = "INSERT statement generated. Press Ctrl+Enter to execute."
 						return m, nil
 					}
 				}
@@ -389,6 +419,10 @@ func (m *Model) openDetailView() {
 		ti.SetValue(val)
 		ti.CharLimit = 500
 		ti.Width = 50
+		ti.Prompt = "│ "
+		ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5A5A5A"))
+		ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA"))
+		ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
 		if i == 0 {
 			ti.Focus()
 		}
@@ -417,6 +451,9 @@ func (m Model) generateUpdateSQL() string {
 		return ""
 	}
 
+	// Get quote character based on database type
+	q := m.quoteIdentifier()
+
 	var setClauses []string
 	for i, input := range m.detailView.inputs {
 		newVal := input.Value()
@@ -426,9 +463,9 @@ func (m Model) generateUpdateSQL() string {
 			// Escape single quotes
 			escapedVal := strings.ReplaceAll(newVal, "'", "''")
 			if newVal == "NULL" {
-				setClauses = append(setClauses, fmt.Sprintf("%s = NULL", colName))
+				setClauses = append(setClauses, fmt.Sprintf("%s%s%s = NULL", q, colName, q))
 			} else {
-				setClauses = append(setClauses, fmt.Sprintf("%s = '%s'", colName, escapedVal))
+				setClauses = append(setClauses, fmt.Sprintf("%s%s%s = '%s'", q, colName, q, escapedVal))
 			}
 		}
 	}
@@ -441,11 +478,79 @@ func (m Model) generateUpdateSQL() string {
 	idVal := m.detailView.originalRow[m.queryMeta.IDIndex]
 	escapedID := strings.ReplaceAll(idVal, "'", "''")
 
-	return fmt.Sprintf("UPDATE %s SET %s WHERE %s = '%s'",
-		m.queryMeta.TableName,
+	return fmt.Sprintf("UPDATE %s%s%s SET %s WHERE %s%s%s = '%s'",
+		q, m.queryMeta.TableName, q,
 		strings.Join(setClauses, ", "),
-		m.queryMeta.IDColumn,
+		q, m.queryMeta.IDColumn, q,
 		escapedID)
+}
+
+// quoteIdentifier returns the identifier quote character for the database type
+func (m Model) quoteIdentifier() string {
+	switch m.dbType {
+	case "mysql":
+		return "`"
+	case "postgres", "postgresql", "pg":
+		return `"`
+	case "sqlite", "sqlite3":
+		return `"`
+	default:
+		return `"`
+	}
+}
+
+// generateDeleteSQL creates a DELETE statement for the current row
+func (m Model) generateDeleteSQL() string {
+	if m.detailView == nil || m.queryMeta == nil || !m.queryMeta.IsEditable {
+		return ""
+	}
+
+	q := m.quoteIdentifier()
+
+	// Get the ID value
+	idVal := m.detailView.originalRow[m.queryMeta.IDIndex]
+	escapedID := strings.ReplaceAll(idVal, "'", "''")
+
+	return fmt.Sprintf("DELETE FROM %s%s%s WHERE %s%s%s = '%s'",
+		q, m.queryMeta.TableName, q,
+		q, m.queryMeta.IDColumn, q,
+		escapedID)
+}
+
+// generateInsertSQL creates an INSERT statement from the current field values
+func (m Model) generateInsertSQL() string {
+	if m.detailView == nil || m.queryMeta == nil || !m.queryMeta.IsEditable {
+		return ""
+	}
+
+	q := m.quoteIdentifier()
+
+	var columns []string
+	var values []string
+
+	for i, input := range m.detailView.inputs {
+		colName := m.result.Columns[i]
+		val := input.Value()
+
+		// Skip the ID column for INSERT (let the database auto-generate it)
+		if i == m.queryMeta.IDIndex {
+			continue
+		}
+
+		columns = append(columns, fmt.Sprintf("%s%s%s", q, colName, q))
+
+		if val == "NULL" {
+			values = append(values, "NULL")
+		} else {
+			escapedVal := strings.ReplaceAll(val, "'", "''")
+			values = append(values, fmt.Sprintf("'%s'", escapedVal))
+		}
+	}
+
+	return fmt.Sprintf("INSERT INTO %s%s%s (%s) VALUES (%s)",
+		q, m.queryMeta.TableName, q,
+		strings.Join(columns, ", "),
+		strings.Join(values, ", "))
 }
 
 // View implements tea.Model
@@ -457,6 +562,21 @@ func (m Model) View() string {
 	// Show detail view if active
 	if m.focus == focusDetail && m.detailView != nil {
 		return m.renderDetailView()
+	}
+
+	// Calculate heights
+	// Title: 1 line + 1 blank = 2
+	// Query box: textarea height + 2 (border) + 1 blank = textarea.Height() + 3
+	// Status bar: 1 line
+	// Help: 1 line
+	titleHeight := 2
+	queryBoxHeight := m.textarea.Height() + 4 // includes border padding and blank line
+	statusHeight := 1
+	helpHeight := 1
+	tableHeight := m.height - titleHeight - queryBoxHeight - statusHeight - helpHeight
+
+	if tableHeight < 3 {
+		tableHeight = 3
 	}
 
 	var b strings.Builder
@@ -473,17 +593,28 @@ func (m Model) View() string {
 	b.WriteString(queryStyle.Render(m.textarea.View()))
 	b.WriteString("\n\n")
 
-	// Results table
+	// Results table area - build content then pad to fill space
+	var tableContent string
 	if m.result != nil {
 		if m.result.Error != nil {
-			b.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", m.result.Error)))
+			tableContent = errorStyle.Render(fmt.Sprintf("Error: %v", m.result.Error))
 		} else if len(m.result.Rows) > 0 {
-			b.WriteString(m.renderTable())
+			tableContent = m.renderTable()
 		} else {
-			b.WriteString("Query executed successfully. No rows returned.")
+			tableContent = "Query executed successfully. No rows returned."
 		}
+	} else {
+		tableContent = helpStyle.Render("Enter a SQL query and press Ctrl+Enter or F5 to execute.")
 	}
-	b.WriteString("\n")
+
+	// Count lines in table content and pad to fill available space
+	tableLines := strings.Count(tableContent, "\n") + 1
+	b.WriteString(tableContent)
+
+	// Pad with empty lines to push status bar to bottom
+	for i := tableLines; i < tableHeight; i++ {
+		b.WriteString("\n")
+	}
 
 	// Status bar
 	statusText := m.statusMessage
@@ -511,6 +642,31 @@ func (m Model) View() string {
 
 // renderDetailView renders the detail/edit view for a row
 func (m Model) renderDetailView() string {
+	// Calculate heights
+	// Title: 1 line + 1 blank = 2
+	// Detail header: 1 line + 1 blank = 2
+	// Status bar: 1 line
+	// Help: 1 line
+	titleHeight := 2
+	headerHeight := 2
+	statusHeight := 1
+	helpHeight := 1
+	contentHeight := m.height - titleHeight - headerHeight - statusHeight - helpHeight
+
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+
+	// Update visible fields based on available height
+	// Each field takes ~2 lines (label + input with border)
+	m.detailView.visibleFields = contentHeight / 2
+	if m.detailView.visibleFields < 3 {
+		m.detailView.visibleFields = 3
+	}
+	if m.detailView.visibleFields > len(m.result.Columns) {
+		m.detailView.visibleFields = len(m.result.Columns)
+	}
+
 	var b strings.Builder
 
 	// Title
@@ -533,31 +689,41 @@ func (m Model) renderDetailView() string {
 		endIdx = len(m.result.Columns)
 	}
 
+	linesWritten := 0
 	for i := m.detailView.scrollOffset; i < endIdx; i++ {
 		colName := m.result.Columns[i]
 		label := fieldLabelStyle.Render(colName + ":")
 
 		if m.queryMeta != nil && m.queryMeta.IsEditable {
-			// Editable field
-			inputStyle := fieldInputStyle
+			// Editable field - textinput has its own styling
+			inputView := m.detailView.inputs[i].View()
+			// Add a focus indicator
 			if i == m.detailView.focusedField {
-				inputStyle = fieldInputFocusedStyle
+				b.WriteString(fmt.Sprintf("%s %s\n", label, inputView))
+			} else {
+				b.WriteString(fmt.Sprintf("%s %s\n", label, fieldInputStyle.Render(inputView)))
 			}
-			b.WriteString(fmt.Sprintf("%s %s\n", label, inputStyle.Render(m.detailView.inputs[i].View())))
 		} else {
 			// Read-only field
 			val := m.detailView.originalRow[i]
 			b.WriteString(fmt.Sprintf("%s %s\n", label, fieldValueStyle.Render(val)))
 		}
+		linesWritten++
 	}
 
 	// Scroll indicator
+	scrollIndicatorLines := 0
 	if len(m.result.Columns) > m.detailView.visibleFields {
 		b.WriteString(fmt.Sprintf("\n  (Showing fields %d-%d of %d)\n",
 			m.detailView.scrollOffset+1, endIdx, len(m.result.Columns)))
+		scrollIndicatorLines = 2
 	}
 
-	b.WriteString("\n")
+	// Pad with empty lines to push status bar to bottom
+	usedLines := linesWritten + scrollIndicatorLines
+	for i := usedLines; i < contentHeight; i++ {
+		b.WriteString("\n")
+	}
 
 	// Status bar
 	b.WriteString(statusBarStyle.Width(m.width).Render(m.statusMessage))
@@ -566,7 +732,7 @@ func (m Model) renderDetailView() string {
 	// Help
 	var helpText string
 	if m.queryMeta != nil && m.queryMeta.IsEditable {
-		helpText = "↑↓/Tab: Navigate fields | F5: Generate UPDATE | Esc: Back to results"
+		helpText = "↑↓/Tab: Navigate | F5: UPDATE | F6: DELETE | F7: INSERT | Esc: Back"
 	} else {
 		helpText = "↑↓/Tab: Navigate fields | Esc: Back to results"
 	}

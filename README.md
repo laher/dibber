@@ -27,14 +27,36 @@ go build -o dabble .
 ## Usage
 
 ```bash
+dabble -dsn 'connection_string' [-type mysql|postgres|sqlite]
+```
+
+The database type is auto-detected from the DSN format, but can be explicitly specified with `-type`.
+
+### Connection Examples
+
+**MySQL:**
+```bash
 dabble -dsn 'user:password@tcp(localhost:3306)/database'
 ```
 
-### DSN Format (MySQL)
+**PostgreSQL:**
+```bash
+dabble -dsn 'postgres://user:password@localhost:5432/database'
+```
 
+**SQLite:**
+```bash
+dabble -dsn '/path/to/database.db'
+dabble -dsn ':memory:'  # In-memory database
 ```
-user:password@tcp(host:port)/database
-```
+
+### DSN Formats
+
+| Database | Format |
+|----------|--------|
+| MySQL | `user:password@tcp(host:port)/database` |
+| PostgreSQL | `postgres://user:password@host:port/database` |
+| SQLite | `/path/to/file.db` or `:memory:` |
 
 ## Key Bindings
 
@@ -64,6 +86,8 @@ user:password@tcp(host:port)/database
 |-----|--------|
 | `↑` / `↓` or `Tab` / `Shift+Tab` | Navigate fields |
 | `F5` | Generate UPDATE statement (if editable) |
+| `F6` | Generate DELETE statement (if editable) |
+| `F7` | Generate INSERT statement (if editable) |
 | `Esc` | Return to results view |
 
 ## Editability
@@ -83,13 +107,19 @@ The detail view allows editing only when the query is "simple enough":
 - Queries with `GROUP BY`, `HAVING`, or `DISTINCT`
 - Queries selecting from multiple tables
 
-When you edit fields and press `F5`, Dabble generates an `UPDATE` statement and places it in the query editor. You can review and execute it manually.
+When you're in the detail view, you can generate SQL statements:
+
+- **F5 (UPDATE)**: Generates an `UPDATE` statement with only the changed fields
+- **F6 (DELETE)**: Generates a `DELETE` statement for the current row
+- **F7 (INSERT)**: Generates an `INSERT` statement with all field values (excluding the ID, which is auto-generated)
+
+All generated statements are placed in the query editor for you to review and execute manually.
 
 ## Supported Databases
 
-- MySQL (current)
-
-Additional database support planned for future releases.
+- **MySQL** - via [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql)
+- **PostgreSQL** - via [pgx](https://github.com/jackc/pgx)
+- **SQLite** - via [go-sqlite3](https://github.com/mattn/go-sqlite3)
 
 ## License
 
