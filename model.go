@@ -120,12 +120,13 @@ type QueryMeta struct {
 
 // DetailView holds the state for the detail/edit view
 type DetailView struct {
-	rowIndex      int
-	originalRow   []string
-	inputs        []textinput.Model
-	focusedField  int
-	scrollOffset  int
-	visibleFields int
+	rowIndex           int
+	originalRow        []string
+	inputs             []textinput.Model
+	focusedField       int
+	scrollOffset       int
+	visibleFields      int
+	contentScrollOffset int // scroll offset within a multi-line field
 }
 
 // Model is the main Bubble Tea model
@@ -243,6 +244,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailView.focusedField > 0 {
 					m.detailView.inputs[m.detailView.focusedField].Blur()
 					m.detailView.focusedField--
+					m.detailView.contentScrollOffset = 0 // Reset content scroll when changing fields
 					m.detailView.inputs[m.detailView.focusedField].Focus()
 					// Adjust scroll if needed
 					if m.detailView.focusedField < m.detailView.scrollOffset {
@@ -255,11 +257,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailView.focusedField < len(m.detailView.inputs)-1 {
 					m.detailView.inputs[m.detailView.focusedField].Blur()
 					m.detailView.focusedField++
+					m.detailView.contentScrollOffset = 0 // Reset content scroll when changing fields
 					m.detailView.inputs[m.detailView.focusedField].Focus()
 					// Adjust scroll if needed
 					if m.detailView.focusedField >= m.detailView.scrollOffset+m.detailView.visibleFields {
 						m.detailView.scrollOffset = m.detailView.focusedField - m.detailView.visibleFields + 1
 					}
+				}
+				return m, nil
+
+			case "pgdown", "ctrl+d":
+				// Scroll down within multi-line content
+				val := m.detailView.originalRow[m.detailView.focusedField]
+				if strings.Contains(val, "\n") {
+					lines := strings.Split(val, "\n")
+					maxScroll := len(lines) - 10 // Keep at least 10 lines visible
+					if maxScroll < 0 {
+						maxScroll = 0
+					}
+					m.detailView.contentScrollOffset += 10
+					if m.detailView.contentScrollOffset > maxScroll {
+						m.detailView.contentScrollOffset = maxScroll
+					}
+				}
+				return m, nil
+
+			case "pgup", "ctrl+u":
+				// Scroll up within multi-line content
+				m.detailView.contentScrollOffset -= 10
+				if m.detailView.contentScrollOffset < 0 {
+					m.detailView.contentScrollOffset = 0
 				}
 				return m, nil
 
@@ -313,23 +340,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.lastQuery = query
-			m.result = m.executeQuery(query)
+				m.result = m.executeQuery(query)
 			m.queryMeta = parseQueryMeta(query, m.result)
-			m.selectedRow = 0
-			m.currentPage = 0
+				m.selectedRow = 0
+				m.currentPage = 0
 			// Save the SQL file after executing
 			m.saveToFile()
-			if m.result.Error != nil {
-				m.statusMessage = fmt.Sprintf("Error: %v", m.result.Error)
-			} else {
-				m.totalPages = (len(m.result.Rows) + pageSize - 1) / pageSize
+				if m.result.Error != nil {
+					m.statusMessage = fmt.Sprintf("Error: %v", m.result.Error)
+				} else {
+					m.totalPages = (len(m.result.Rows) + pageSize - 1) / pageSize
 				if m.totalPages == 0 {
 					m.totalPages = 1
 				}
-				m.statusMessage = fmt.Sprintf("Query returned %d rows", len(m.result.Rows))
-				if len(m.result.Rows) > 0 {
-					m.focus = focusResults
-					m.textarea.Blur()
+					m.statusMessage = fmt.Sprintf("Query returned %d rows", len(m.result.Rows))
+					if len(m.result.Rows) > 0 {
+						m.focus = focusResults
+						m.textarea.Blur()
 				}
 			}
 			return m, nil
@@ -625,7 +652,7 @@ func (m Model) View() string {
 
 	// Pad with empty lines to push status bar to bottom
 	for i := tableLines; i < tableHeight; i++ {
-		b.WriteString("\n")
+	b.WriteString("\n")
 	}
 
 	// Status bar
@@ -702,6 +729,7 @@ func (m Model) renderDetailView() string {
 	}
 
 	linesWritten := 0
+	maxValueLines := 15 // Max lines to show for multi-line values
 	for i := m.detailView.scrollOffset; i < endIdx; i++ {
 		colName := m.result.Columns[i]
 		label := fieldLabelStyle.Render(colName + ":")
@@ -715,12 +743,104 @@ func (m Model) renderDetailView() string {
 			} else {
 				b.WriteString(fmt.Sprintf("%s %s\n", label, fieldInputStyle.Render(inputView)))
 			}
+			linesWritten++
 		} else {
-			// Read-only field
+			// Read-only field - handle multi-line content
 			val := m.detailView.originalRow[i]
-			b.WriteString(fmt.Sprintf("%s %s\n", label, fieldValueStyle.Render(val)))
+			isFocused := i == m.detailView.focusedField
+
+			if strings.Contains(val, "\n") {
+				// Multi-line value - display as a block
+				b.WriteString(label)
+				b.WriteString("\n")
+				linesWritten++
+
+				lines := strings.Split(val, "\n")
+				totalLines := len(lines)
+
+				// Apply content scroll offset for focused field
+				scrollOffset := 0
+				if isFocused {
+					scrollOffset = m.detailView.contentScrollOffset
+					if scrollOffset > len(lines) {
+						scrollOffset = 0
+					}
+				}
+
+				// Limit lines shown (show more for focused field)
+				maxLines := maxValueLines
+				if isFocused {
+					maxLines = maxValueLines * 2
+				}
+
+				// Apply scroll offset
+				startLine := scrollOffset
+				endLine := scrollOffset + maxLines
+				if endLine > len(lines) {
+					endLine = len(lines)
+				}
+				displayLines := lines[startLine:endLine]
+
+				// Style for the code block
+				blockStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#98C379")).
+					PaddingLeft(2)
+
+				if isFocused {
+					blockStyle = blockStyle.
+						Background(lipgloss.Color("#2C323C")).
+						Foreground(lipgloss.Color("#E5C07B"))
+				}
+
+				for _, line := range displayLines {
+					// Truncate very long lines
+					if len(line) > m.width-10 {
+						line = line[:m.width-13] + "..."
+					}
+					b.WriteString(blockStyle.Render(line))
+					b.WriteString("\n")
+					linesWritten++
+				}
+
+				// Show scroll position indicator
+				if isFocused && (scrollOffset > 0 || endLine < totalLines) {
+					remaining := totalLines - endLine
+					if scrollOffset > 0 && remaining > 0 {
+						b.WriteString(helpStyle.Render(fmt.Sprintf("  ↑ %d lines above | ↓ %d lines below (PgUp/PgDn to scroll)", scrollOffset, remaining)))
+					} else if scrollOffset > 0 {
+						b.WriteString(helpStyle.Render(fmt.Sprintf("  ↑ %d lines above (PgUp to scroll)", scrollOffset)))
+					} else {
+						b.WriteString(helpStyle.Render(fmt.Sprintf("  ↓ %d more lines (PgDn to scroll)", remaining)))
+					}
+					b.WriteString("\n")
+					linesWritten++
+				} else if endLine < totalLines {
+					b.WriteString(helpStyle.Render(fmt.Sprintf("  ... (%d more lines)", totalLines-endLine)))
+					b.WriteString("\n")
+					linesWritten++
+				}
+			} else {
+				// Single-line value
+				displayVal := val
+				// Truncate if too long, show more for focused
+				maxLen := 60
+				if isFocused {
+					maxLen = m.width - 25
+				}
+				if len(displayVal) > maxLen {
+					displayVal = displayVal[:maxLen-3] + "..."
+				}
+
+				style := fieldValueStyle
+				if isFocused {
+					style = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#E5C07B")).
+						Background(lipgloss.Color("#2C323C"))
+				}
+				b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
+				linesWritten++
+			}
 		}
-		linesWritten++
 	}
 
 	// Scroll indicator
@@ -744,9 +864,9 @@ func (m Model) renderDetailView() string {
 	// Help
 	var helpText string
 	if m.queryMeta != nil && m.queryMeta.IsEditable {
-		helpText = "↑↓/Tab: Navigate | F5: UPDATE | F6: DELETE | F7: INSERT | Esc: Back"
+		helpText = "↑↓/Tab: Navigate | PgUp/Dn: Scroll content | F5: UPDATE | F6: DELETE | F7: INSERT | Esc: Back"
 	} else {
-		helpText = "↑↓/Tab: Navigate fields | Esc: Back to results"
+		helpText = "↑↓/Tab: Navigate fields | PgUp/PgDn: Scroll content | Esc: Back to results"
 	}
 	b.WriteString(helpStyle.Render(helpText))
 
