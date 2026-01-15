@@ -72,10 +72,11 @@ The query editor supports multiple queries separated by semicolons (`;`). When y
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+Enter` / `F5` | Execute query under cursor |
+| `Ctrl+R` or `F5` | Execute query under cursor |
 | `Tab` | Switch focus to results |
 | `↑` / `↓` | Scroll through queries |
-| `Esc` | Quit |
+| `Esc` | Back (unfocus results) |
+| `Ctrl+Q` | Quit (works from any view) |
 
 **Multi-query example:**
 ```sql
@@ -86,7 +87,7 @@ WHERE status = 'pending';
 
 UPDATE users SET name = 'test' WHERE id = 1;
 ```
-Position your cursor on any query and press `Ctrl+Enter` to execute just that query.
+Position your cursor on any query and press `Ctrl+R` to execute just that query.
 
 ### Results View
 
@@ -105,9 +106,10 @@ Position your cursor on any query and press `Ctrl+Enter` to execute just that qu
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` or `Tab` / `Shift+Tab` | Navigate fields |
-| `F5` | Generate UPDATE statement (if editable) |
-| `F6` | Generate DELETE statement (if editable) |
-| `F7` | Generate INSERT statement (if editable) |
+| `PgUp` / `PgDn` | Scroll within multi-line content |
+| `Ctrl+U` or `F5` | Generate UPDATE statement (if editable) |
+| `Ctrl+D` or `F6` | Generate DELETE statement (if editable) |
+| `Ctrl+I` or `F7` | Generate INSERT statement (if editable) |
 | `Esc` | Return to results view |
 
 ## Editability
@@ -133,7 +135,7 @@ When you're in the detail view, you can generate SQL statements:
 - **F6 (DELETE)**: Generates a `DELETE` statement for the current row
 - **F7 (INSERT)**: Generates an `INSERT` statement with all field values (excluding the ID, which is auto-generated)
 
-All generated statements are **appended** to the query editor (not replacing existing content) and the cursor moves to the new query. Press `Ctrl+Enter` to execute.
+All generated statements are **appended** to the query editor (not replacing existing content) and the cursor moves to the new query. Press `Ctrl+R` to execute.
 
 ## Supported Databases
 

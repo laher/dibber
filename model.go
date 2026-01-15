@@ -185,6 +185,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Global quit - works from any view
+		if msg.String() == "ctrl+q" {
+			return m, tea.Quit
+		}
+
 		// Handle detail view keys first
 		if m.focus == focusDetail && m.detailView != nil {
 			switch msg.String() {
@@ -194,7 +199,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailView = nil
 				return m, nil
 
-			case "f5":
+			case "f5", "ctrl+u":
 				// Generate UPDATE and append to query window
 				if m.queryMeta != nil && m.queryMeta.IsEditable {
 					updateSQL := m.generateUpdateSQL()
@@ -203,14 +208,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.focus = focusQuery
 						m.textarea.Focus()
 						m.detailView = nil
-						m.statusMessage = "UPDATE statement appended. Press Ctrl+Enter to execute."
+						m.statusMessage = "UPDATE statement appended. Press Ctrl+R to execute."
 						return m, nil
 					}
 					m.statusMessage = "No changes to update."
 				}
 				return m, nil
 
-			case "f6":
+			case "f6", "ctrl+d":
 				// Generate DELETE and append to query window
 				if m.queryMeta != nil && m.queryMeta.IsEditable {
 					deleteSQL := m.generateDeleteSQL()
@@ -219,13 +224,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.focus = focusQuery
 						m.textarea.Focus()
 						m.detailView = nil
-						m.statusMessage = "DELETE statement appended. Press Ctrl+Enter to execute."
+						m.statusMessage = "DELETE statement appended. Press Ctrl+R to execute."
 						return m, nil
 					}
 				}
 				return m, nil
 
-			case "f7":
+			case "f7", "ctrl+i":
 				// Generate INSERT and append to query window
 				if m.queryMeta != nil && m.queryMeta.IsEditable {
 					insertSQL := m.generateInsertSQL()
@@ -234,7 +239,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.focus = focusQuery
 						m.textarea.Focus()
 						m.detailView = nil
-						m.statusMessage = "INSERT statement appended. Press Ctrl+Enter to execute."
+						m.statusMessage = "INSERT statement appended. Press Ctrl+R to execute."
 						return m, nil
 					}
 				}
@@ -266,7 +271,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
-			case "pgdown", "ctrl+d":
+			case "pgdown":
 				// Scroll down within multi-line content
 				val := m.detailView.originalRow[m.detailView.focusedField]
 				if strings.Contains(val, "\n") {
@@ -282,7 +287,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
-			case "pgup", "ctrl+u":
+			case "pgup":
 				// Scroll up within multi-line content
 				m.detailView.contentScrollOffset -= 10
 				if m.detailView.contentScrollOffset < 0 {
@@ -306,12 +311,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "esc":
+			// Esc goes back one level, doesn't quit
 			if m.focus == focusResults {
 				m.focus = focusQuery
 				m.textarea.Focus()
-				return m, nil
 			}
-			return m, tea.Quit
+			return m, nil
 
 		case "tab":
 			if m.result != nil && len(m.result.Rows) > 0 {
@@ -332,7 +337,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-		case "ctrl+enter", "f5":
+		case "ctrl+r", "f5":
 			// Execute the query under the cursor
 			query := m.getQueryUnderCursor()
 			if query == "" {
@@ -643,7 +648,7 @@ func (m Model) View() string {
 			tableContent = "Query executed successfully. No rows returned."
 		}
 	} else {
-		tableContent = helpStyle.Render("Enter a SQL query and press Ctrl+Enter or F5 to execute.")
+		tableContent = helpStyle.Render("Enter a SQL query and press Ctrl+R or F5 to execute.")
 	}
 
 	// Count lines in table content and pad to fill available space
@@ -673,7 +678,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help
-	helpText := "Ctrl+Enter/F5: Execute | Tab: Switch focus | ↑↓/jk: Navigate | Enter: Detail | Esc: Back/Quit"
+	helpText := "Ctrl+R: Execute | Tab: Switch focus | ↑↓/jk: Navigate | Enter: Detail | Esc: Back | Ctrl+Q: Quit"
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
@@ -864,9 +869,9 @@ func (m Model) renderDetailView() string {
 	// Help
 	var helpText string
 	if m.queryMeta != nil && m.queryMeta.IsEditable {
-		helpText = "↑↓/Tab: Navigate | PgUp/Dn: Scroll content | F5: UPDATE | F6: DELETE | F7: INSERT | Esc: Back"
+		helpText = "↑↓/Tab: Navigate | PgUp/Dn: Scroll | Ctrl+U/D/I: UPDATE/DELETE/INSERT | Esc: Back | Ctrl+Q: Quit"
 	} else {
-		helpText = "↑↓/Tab: Navigate fields | PgUp/PgDn: Scroll content | Esc: Back to results"
+		helpText = "↑↓/Tab: Navigate fields | PgUp/PgDn: Scroll content | Esc: Back | Ctrl+Q: Quit"
 	}
 	b.WriteString(helpStyle.Render(helpText))
 
