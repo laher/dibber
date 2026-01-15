@@ -131,23 +131,25 @@ type DetailView struct {
 
 // Model is the main Bubble Tea model
 type Model struct {
-	db            *sql.DB
-	dbType        string
-	sqlFile       string
-	textarea      textarea.Model
-	viewport      viewport.Model
-	focus         focusState
-	result        *QueryResult
-	queryMeta     *QueryMeta
-	lastQuery     string
-	selectedRow   int
-	currentPage   int
-	totalPages    int
-	width         int
-	height        int
-	ready         bool
-	statusMessage string
-	detailView    *DetailView
+	db               *sql.DB
+	dbType           string
+	sqlFile          string
+	lastSavedContent string
+	confirmingQuit   bool
+	textarea         textarea.Model
+	viewport         viewport.Model
+	focus            focusState
+	result           *QueryResult
+	queryMeta        *QueryMeta
+	lastQuery        string
+	selectedRow      int
+	currentPage      int
+	totalPages       int
+	width            int
+	height           int
+	ready            bool
+	statusMessage    string
+	detailView       *DetailView
 }
 
 // NewModel creates a new Model
@@ -166,11 +168,12 @@ func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string) Mode
 	}
 
 	return Model{
-		db:       db,
-		dbType:   dbType,
-		sqlFile:  sqlFile,
-		textarea: ta,
-		focus:    focusQuery,
+		db:               db,
+		dbType:           dbType,
+		sqlFile:          sqlFile,
+		lastSavedContent: initialSQL,
+		textarea:         ta,
+		focus:            focusQuery,
 	}
 }
 
@@ -185,9 +188,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle confirm quit dialog
+		if m.confirmingQuit {
+			switch msg.String() {
+			case "y", "Y":
+				m.saveToFile()
+				return m, tea.Quit
+			case "n", "N":
+				return m, tea.Quit
+			case "esc":
+				m.confirmingQuit = false
+				m.statusMessage = "Quit cancelled"
+				return m, nil
+			default:
+				// Ignore other keys while confirming
+				return m, nil
+			}
+		}
+
 		// Global quit - works from any view
-		if msg.String() == "ctrl+q" {
+		if msg.String() == "ctrl+q" || msg.String() == "ctrl+c" {
+			if m.hasUnsavedChanges() {
+				m.confirmingQuit = true
+				m.statusMessage = "You have unsaved changes. Save before quitting? (y/n, Esc to cancel)"
+				return m, nil
+			}
 			return m, tea.Quit
+		}
+
+		// Resize query window - only works in results view (not when typing in query)
+		if m.focus == focusResults {
+			switch msg.String() {
+			case "-":
+				// Shrink query window
+				h := m.textarea.Height()
+				if h > 3 {
+					m.textarea.SetHeight(h - 1)
+					m.statusMessage = fmt.Sprintf("Query window: %d lines", h-1)
+				}
+				return m, nil
+			case "+", "=":
+				// Grow query window
+				h := m.textarea.Height()
+				maxHeight := m.height / 2 // Max half the screen
+				if maxHeight < 5 {
+					maxHeight = 5
+				}
+				if h < maxHeight {
+					m.textarea.SetHeight(h + 1)
+					m.statusMessage = fmt.Sprintf("Query window: %d lines", h+1)
+				}
+				return m, nil
+			}
 		}
 
 		// Handle detail view keys first
@@ -307,9 +359,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-
 		case "esc":
 			// Esc goes back one level, doesn't quit
 			if m.focus == focusResults {
@@ -678,7 +727,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help
-	helpText := "Ctrl+R: Execute | Tab: Switch focus | ↑↓/jk: Navigate | Enter: Detail | Esc: Back | Ctrl+Q: Quit"
+	helpText := "Ctrl+R: Execute | Tab: Focus | ↑↓: Navigate | Enter: Detail | -/+: Resize | Ctrl+Q: Quit"
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
@@ -1082,7 +1131,14 @@ func (m *Model) saveToFile() {
 	}
 	content := m.textarea.Value()
 	// Write file, ignoring errors (we don't want to crash on save failure)
-	_ = os.WriteFile(m.sqlFile, []byte(content), 0644)
+	if err := os.WriteFile(m.sqlFile, []byte(content), 0644); err == nil {
+		m.lastSavedContent = content
+	}
+}
+
+// hasUnsavedChanges returns true if the textarea content differs from the last saved content
+func (m Model) hasUnsavedChanges() bool {
+	return m.textarea.Value() != m.lastSavedContent
 }
 
 // executeQuery runs the SQL query and returns results
