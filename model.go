@@ -121,7 +121,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleFileDialogKeys(msg)
 		}
 
-		// Resize query window - only works in results view (not when typing in query)
+		// Resize query window - works in results/banner view (not when typing in query)
 		if m.focus == focusResults {
 			switch msg.String() {
 			case "-":
@@ -147,6 +147,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Also handle Ctrl+R from results/banner view (execute query)
+		if m.focus == focusResults && (msg.String() == "ctrl+r" || msg.String() == "f5") {
+			// Switch to query, execute, handled below
+			m.focus = focusQuery
+			m.textarea.Focus()
+			// Fall through to handle ctrl+r below
+		}
+
 		// Handle detail view keys first
 		if m.focus == focusDetail && m.detailView != nil {
 			return m.handleDetailViewKeys(msg)
@@ -162,21 +170,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "tab":
-			if m.result != nil && len(m.result.Rows) > 0 {
-				if m.focus == focusQuery {
-					m.focus = focusResults
-					m.textarea.Blur()
-				} else if m.focus == focusResults {
-					m.focus = focusQuery
-					m.textarea.Focus()
-				}
+			// Tab toggles between query and results/banner pane
+			if m.focus == focusQuery {
+				m.focus = focusResults
+				m.textarea.Blur()
+			} else if m.focus == focusResults {
+				m.focus = focusQuery
+				m.textarea.Focus()
 			}
 			return m, nil
 
 		case "enter":
-			// Open detail view when in results
+			// Open detail view when in results (not banner)
 			if m.focus == focusResults && m.result != nil && len(m.result.Rows) > 0 {
 				m.openDetailView()
+				return m, nil
+			}
+			// In banner view, Enter does nothing (no detail to show)
+			if m.focus == focusResults && m.result == nil {
 				return m, nil
 			}
 

@@ -52,6 +52,8 @@ func (m Model) View() string {
 
 	// Results table area - build content then pad to fill space
 	var tableContent string
+	resultsFocused := m.focus == focusResults
+
 	if m.result != nil {
 		if m.result.Error != nil {
 			tableContent = errorStyle.Render(fmt.Sprintf("Error: %v", m.result.Error))
@@ -62,6 +64,12 @@ func (m Model) View() string {
 		}
 	} else {
 		tableContent = m.renderBanner()
+	}
+
+	// Add focus indicator for results/banner area
+	if resultsFocused {
+		focusIndicator := editableBadgeStyle.Render("▶ ")
+		tableContent = focusIndicator + tableContent
 	}
 
 	// Count lines in table content and pad to fill available space
@@ -90,8 +98,19 @@ func (m Model) View() string {
 	b.WriteString(statusBarStyle.Width(m.width).Render(statusText))
 	b.WriteString("\n")
 
-	// Help
-	helpText := "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Tab: Focus | Enter: Detail | -/+: Resize | Ctrl+Q: Quit"
+	// Help - context-sensitive
+	var helpText string
+	if m.focus == focusQuery {
+		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Tab: Switch pane | Ctrl+Q: Quit"
+	} else if m.focus == focusResults {
+		if m.result != nil && len(m.result.Rows) > 0 {
+			helpText = "↑↓: Navigate | Enter: Detail | -/+: Resize | Tab: Switch pane | Ctrl+R: Run | Ctrl+Q: Quit"
+		} else {
+			helpText = "-/+: Resize query | Tab: Switch pane | Ctrl+R: Run | Ctrl+S: Save | Ctrl+Q: Quit"
+		}
+	} else {
+		helpText = "Ctrl+R: Run | Ctrl+S: Save | Tab: Switch pane | Ctrl+Q: Quit"
+	}
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
