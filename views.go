@@ -100,15 +100,16 @@ func (m Model) View() string {
 
 	// Help - context-sensitive
 	var helpText string
-	if m.focus == focusQuery {
+	switch m.focus {
+	case focusQuery:
 		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Tab: Switch pane | Ctrl+Q: Quit"
-	} else if m.focus == focusResults {
+	case focusResults:
 		if m.result != nil && len(m.result.Rows) > 0 {
 			helpText = "↑↓: Navigate | Enter: Detail | -/+: Resize | Tab: Switch pane | Ctrl+R: Run | Ctrl+Q: Quit"
 		} else {
 			helpText = "-/+: Resize query | Tab: Switch pane | Ctrl+R: Run | Ctrl+S: Save | Ctrl+Q: Quit"
 		}
-	} else {
+	default:
 		helpText = "Ctrl+R: Run | Ctrl+S: Save | Tab: Switch pane | Ctrl+Q: Quit"
 	}
 	b.WriteString(helpStyle.Render(helpText))

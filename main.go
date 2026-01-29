@@ -64,7 +64,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to connect to database: %v\n", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify connection
 	if err := db.Ping(); err != nil {

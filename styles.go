@@ -45,11 +45,6 @@ var (
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#626262"))
 
-	detailBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#7D56F4")).
-			Padding(1, 2)
-
 	detailTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#7D56F4")).
@@ -65,10 +60,6 @@ var (
 
 	fieldInputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#AFAFAF"))
-
-	fieldInputFocusedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FAFAFA")).
-				Background(lipgloss.Color("#3A3A5A"))
 
 	readOnlyBadgeStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#FF6B6B")).

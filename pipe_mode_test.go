@@ -26,17 +26,17 @@ func TestOutputTable(t *testing.T) {
 
 	outputTable(columns, rows)
 
-	w.Close()
-	wErr.Close()
+	_ = w.Close()
+	_ = wErr.Close()
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	var bufErr bytes.Buffer
-	io.Copy(&bufErr, rErr)
+	_, _ = io.Copy(&bufErr, rErr)
 
 	// Check output contains expected elements
 	if !strings.Contains(output, "id") {
@@ -66,11 +66,11 @@ func TestOutputCSV(t *testing.T) {
 
 	outputCSV(columns, rows, ",")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
@@ -110,11 +110,11 @@ func TestOutputTSV(t *testing.T) {
 
 	outputCSV(columns, rows, "\t")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
@@ -168,17 +168,17 @@ func TestOutputTableEmpty(t *testing.T) {
 
 	outputTable(columns, rows)
 
-	w.Close()
-	wErr.Close()
+	_ = w.Close()
+	_ = wErr.Close()
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	var bufErr bytes.Buffer
-	io.Copy(&bufErr, rErr)
+	_, _ = io.Copy(&bufErr, rErr)
 	stderrOutput := bufErr.String()
 
 	// Should still have header
@@ -204,11 +204,11 @@ func TestOutputTableNoColumns(t *testing.T) {
 
 	outputTable(columns, rows)
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	// Should be empty

@@ -43,7 +43,7 @@ func runPipeMode(db *sql.DB, format string) {
 		fmt.Fprintf(os.Stderr, "Query error: %v\n", err)
 		os.Exit(1)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Get column names
 	columns, err := rows.Columns()

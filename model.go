@@ -171,10 +171,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			// Tab toggles between query and results/banner pane
-			if m.focus == focusQuery {
+			switch m.focus {
+			case focusQuery:
 				m.focus = focusResults
 				m.textarea.Blur()
-			} else if m.focus == focusResults {
+			case focusResults:
 				m.focus = focusQuery
 				m.textarea.Focus()
 			}

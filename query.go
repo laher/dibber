@@ -12,7 +12,7 @@ func executeQuery(db *sql.DB, query string) *QueryResult {
 	if err != nil {
 		return &QueryResult{Error: err}
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	columns, err := rows.Columns()
 	if err != nil {

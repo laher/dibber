@@ -49,7 +49,7 @@ Line 3')
 // TestExecuteQuery tests basic query execution
 func TestExecuteQuery(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	result := executeQuery(db, "SELECT id, name, email FROM users ORDER BY id")
 
@@ -90,7 +90,7 @@ func TestExecuteQuery(t *testing.T) {
 // TestExecuteQueryError tests error handling for invalid queries
 func TestExecuteQueryError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	result := executeQuery(db, "SELECT * FROM nonexistent_table")
 
@@ -138,7 +138,7 @@ func TestColumnTypeDetection(t *testing.T) {
 // TestParseQueryMeta tests query metadata parsing
 func TestParseQueryMeta(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	tests := []struct {
 		name       string
@@ -325,7 +325,7 @@ func TestEscapeSQLString(t *testing.T) {
 // TestIntegrationQueryAndFormat tests full query-to-output pipeline
 func TestIntegrationQueryAndFormat(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Execute query
 	result := executeQuery(db, "SELECT id, name, salary FROM users WHERE id = 2")
@@ -353,7 +353,7 @@ func TestIntegrationQueryAndFormat(t *testing.T) {
 // TestExecuteQueryWithMultilineData tests handling of multiline data
 func TestExecuteQueryWithMultilineData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	result := executeQuery(db, "SELECT notes FROM users WHERE id = 3")
 	if result.Error != nil {
