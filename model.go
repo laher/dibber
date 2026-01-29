@@ -256,10 +256,19 @@ func (m *Model) openDetailView() {
 
 	row := m.result.Rows[m.selectedRow]
 	inputs := make([]textinput.Model, len(m.result.Columns))
+	isNull := make([]bool, len(m.result.Columns))
+	originalValues := make([]CellValue, len(m.result.Columns))
 
-	for i, val := range row {
+	for i, cell := range row {
 		ti := textinput.New()
-		ti.SetValue(val)
+		// For NULL values, leave the input empty but track NULL state separately
+		if cell.IsNull {
+			ti.SetValue("")
+			isNull[i] = true
+		} else {
+			ti.SetValue(cell.Value)
+			isNull[i] = false
+		}
 		ti.CharLimit = 500
 		ti.Width = 50
 		ti.Prompt = "│ "
@@ -270,6 +279,7 @@ func (m *Model) openDetailView() {
 			ti.Focus()
 		}
 		inputs[i] = ti
+		originalValues[i] = cell
 	}
 
 	visibleFields := (m.height - 12) / 2
@@ -277,13 +287,19 @@ func (m *Model) openDetailView() {
 		visibleFields = 3
 	}
 
+	// Copy column types
+	columnTypes := make([]ColumnType, len(m.result.ColumnTypes))
+	copy(columnTypes, m.result.ColumnTypes)
+
 	m.detailView = &DetailView{
-		rowIndex:      m.selectedRow,
-		originalRow:   append([]string{}, row...),
-		inputs:        inputs,
-		focusedField:  0,
-		scrollOffset:  0,
-		visibleFields: visibleFields,
+		rowIndex:       m.selectedRow,
+		originalValues: originalValues,
+		inputs:         inputs,
+		isNull:         isNull,
+		columnTypes:    columnTypes,
+		focusedField:   0,
+		scrollOffset:   0,
+		visibleFields:  visibleFields,
 	}
 	m.focus = focusDetail
 }

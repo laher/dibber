@@ -77,4 +77,30 @@ var (
 	editableBadgeStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#73F59F")).
 				Bold(true)
+
+	// NULL value styles
+	nullValueStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#C678DD")). // magenta/purple
+			Italic(true)
+
+	nullBadgeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#C678DD")).
+			Bold(true)
+
+	emptyStringStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#5C6370")). // dim gray
+				Italic(true)
+
+	// Type indicator styles for detail view
+	numericValueStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D19A66")) // orange for numbers
+
+	booleanValueStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#56B6C2")) // cyan for booleans
+
+	// Table NULL cell style
+	nullCellStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#5C6370")).
+			Italic(true).
+			Padding(0, 1)
 )

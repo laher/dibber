@@ -79,8 +79,9 @@ func (m Model) renderTable() string {
 	maxColWidth := 40
 	for _, row := range pageRows {
 		for i, cell := range row {
-			if len(cell) > colWidths[i] {
-				colWidths[i] = len(cell)
+			displayLen := len(cell.String())
+			if displayLen > colWidths[i] {
+				colWidths[i] = displayLen
 			}
 		}
 	}
@@ -117,9 +118,20 @@ func (m Model) renderTable() string {
 		actualRowIdx := startIdx + rowIdx
 		var cells []string
 		for i, cell := range row {
-			cellStr := truncateString(cell, colWidths[i])
+			displayVal := cell.String()
+			cellStr := truncateString(displayVal, colWidths[i])
 			cellStr = padRight(cellStr, colWidths[i])
-			if actualRowIdx == m.selectedRow && m.focus == focusResults {
+
+			isSelected := actualRowIdx == m.selectedRow && m.focus == focusResults
+
+			if cell.IsNull {
+				// NULL values get special styling
+				if isSelected {
+					cells = append(cells, selectedRowStyle.Render(nullCellStyle.Render(cellStr)))
+				} else {
+					cells = append(cells, nullCellStyle.Render(cellStr))
+				}
+			} else if isSelected {
 				cells = append(cells, selectedRowStyle.Render(tableCellStyle.Render(cellStr)))
 			} else {
 				cells = append(cells, tableCellStyle.Render(cellStr))

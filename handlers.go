@@ -99,6 +99,21 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "ctrl+n":
+		// Toggle NULL state for focused field
+		if m.queryMeta != nil && m.queryMeta.IsEditable {
+			idx := m.detailView.focusedField
+			m.detailView.isNull[idx] = !m.detailView.isNull[idx]
+			if m.detailView.isNull[idx] {
+				// Clear the input when setting to NULL
+				m.detailView.inputs[idx].SetValue("")
+				m.statusMessage = "Field set to NULL"
+			} else {
+				m.statusMessage = "Field set to non-NULL (empty string)"
+			}
+		}
+		return m, nil
+
 	case "up", "shift+tab":
 		if m.detailView.focusedField > 0 {
 			m.detailView.inputs[m.detailView.focusedField].Blur()
@@ -127,9 +142,9 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "pgdown":
 		// Scroll down within multi-line content
-		val := m.detailView.originalRow[m.detailView.focusedField]
-		if strings.Contains(val, "\n") {
-			lines := strings.Split(val, "\n")
+		origVal := m.detailView.originalValues[m.detailView.focusedField]
+		if !origVal.IsNull && strings.Contains(origVal.Value, "\n") {
+			lines := strings.Split(origVal.Value, "\n")
 			maxScroll := len(lines) - 10 // Keep at least 10 lines visible
 			if maxScroll < 0 {
 				maxScroll = 0
@@ -152,9 +167,15 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Update the focused input
 		if m.queryMeta != nil && m.queryMeta.IsEditable {
+			idx := m.detailView.focusedField
 			var cmd tea.Cmd
-			m.detailView.inputs[m.detailView.focusedField], cmd = m.detailView.inputs[m.detailView.focusedField].Update(msg)
+			m.detailView.inputs[idx], cmd = m.detailView.inputs[idx].Update(msg)
 			cmds = append(cmds, cmd)
+
+			// If user types in a NULL field, automatically make it non-NULL
+			if m.detailView.isNull[idx] && m.detailView.inputs[idx].Value() != "" {
+				m.detailView.isNull[idx] = false
+			}
 		}
 		return m, tea.Batch(cmds...)
 	}

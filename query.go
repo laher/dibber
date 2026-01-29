@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// executeQuery runs the SQL query and returns results
+// executeQuery runs the SQL query and returns results with type information
 func executeQuery(db *sql.DB, query string) *QueryResult {
 	rows, err := db.Query(query)
 	if err != nil {
@@ -19,7 +19,19 @@ func executeQuery(db *sql.DB, query string) *QueryResult {
 		return &QueryResult{Error: err}
 	}
 
-	var resultRows [][]string
+	// Get column type information
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return &QueryResult{Error: err}
+	}
+
+	// Map database types to our ColumnType categories
+	colTypes := make([]ColumnType, len(columns))
+	for i, ct := range columnTypes {
+		colTypes[i] = categorizeColumnType(ct.DatabaseTypeName())
+	}
+
+	var resultRows [][]CellValue
 	for rows.Next() {
 		// Create a slice of interface{} to hold each column
 		values := make([]interface{}, len(columns))
@@ -32,17 +44,23 @@ func executeQuery(db *sql.DB, query string) *QueryResult {
 			return &QueryResult{Error: err}
 		}
 
-		// Convert to strings
-		row := make([]string, len(columns))
+		// Convert to CellValues with NULL awareness
+		row := make([]CellValue, len(columns))
 		for i, val := range values {
 			if val == nil {
-				row[i] = "NULL"
+				row[i] = CellValue{Value: "", IsNull: true}
 			} else {
 				switch v := val.(type) {
 				case []byte:
-					row[i] = string(v)
+					row[i] = CellValue{Value: string(v), IsNull: false}
+				case bool:
+					if v {
+						row[i] = CellValue{Value: "true", IsNull: false}
+					} else {
+						row[i] = CellValue{Value: "false", IsNull: false}
+					}
 				default:
-					row[i] = fmt.Sprintf("%v", v)
+					row[i] = CellValue{Value: fmt.Sprintf("%v", v), IsNull: false}
 				}
 			}
 		}
@@ -54,9 +72,77 @@ func executeQuery(db *sql.DB, query string) *QueryResult {
 	}
 
 	return &QueryResult{
-		Columns: columns,
-		Rows:    resultRows,
+		Columns:     columns,
+		ColumnTypes: colTypes,
+		Rows:        resultRows,
 	}
+}
+
+// categorizeColumnType maps database-specific type names to our general categories
+func categorizeColumnType(dbTypeName string) ColumnType {
+	typeName := strings.ToUpper(dbTypeName)
+
+	// Numeric types
+	numericTypes := []string{
+		"INT", "INTEGER", "SMALLINT", "BIGINT", "TINYINT", "MEDIUMINT",
+		"DECIMAL", "NUMERIC", "FLOAT", "DOUBLE", "REAL",
+		"INT2", "INT4", "INT8", "FLOAT4", "FLOAT8",
+		"SERIAL", "BIGSERIAL", "SMALLSERIAL",
+		"MONEY",
+	}
+	for _, nt := range numericTypes {
+		if strings.Contains(typeName, nt) {
+			return ColTypeNumeric
+		}
+	}
+
+	// Boolean types
+	booleanTypes := []string{"BOOL", "BOOLEAN", "BIT"}
+	for _, bt := range booleanTypes {
+		if strings.Contains(typeName, bt) {
+			return ColTypeBoolean
+		}
+	}
+
+	// Date/time types
+	dateTypes := []string{
+		"DATE", "TIME", "DATETIME", "TIMESTAMP",
+		"TIMESTAMPTZ", "TIMETZ",
+		"YEAR", "INTERVAL",
+	}
+	for _, dt := range dateTypes {
+		if strings.Contains(typeName, dt) {
+			return ColTypeDatetime
+		}
+	}
+
+	// Blob/binary types
+	blobTypes := []string{
+		"BLOB", "BINARY", "VARBINARY", "BYTEA",
+		"TINYBLOB", "MEDIUMBLOB", "LONGBLOB",
+	}
+	for _, bt := range blobTypes {
+		if strings.Contains(typeName, bt) {
+			return ColTypeBlob
+		}
+	}
+
+	// Text types (default for most string-like types)
+	textTypes := []string{
+		"CHAR", "VARCHAR", "TEXT", "STRING",
+		"TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
+		"NCHAR", "NVARCHAR", "NTEXT",
+		"UUID", "JSON", "JSONB", "XML",
+		"ENUM", "SET",
+	}
+	for _, tt := range textTypes {
+		if strings.Contains(typeName, tt) {
+			return ColTypeText
+		}
+	}
+
+	// Default to text for unknown types (safer to quote)
+	return ColTypeUnknown
 }
 
 // parseQueryMeta analyzes the query to determine if it's editable
@@ -233,28 +319,128 @@ func (m Model) getQueryUnderCursor() string {
 	return ""
 }
 
+// formatValueForSQL formats a value for use in a SQL statement based on type and NULL state
+func formatValueForSQL(value string, isNull bool, colType ColumnType, dbType string) string {
+	if isNull {
+		return "NULL"
+	}
+
+	// Handle empty string - it's a valid value, not NULL
+	if value == "" {
+		return "''"
+	}
+
+	// Numeric types don't need quotes
+	if colType.IsNumeric() {
+		// Validate it looks like a number to prevent SQL injection
+		if isValidNumber(value) {
+			return value
+		}
+		// If not a valid number, quote it (safer, will cause DB error if wrong)
+		return fmt.Sprintf("'%s'", escapeSQLString(value))
+	}
+
+	// Boolean handling
+	if colType.IsBoolean() {
+		lower := strings.ToLower(value)
+		switch lower {
+		case "true", "1", "yes", "on", "t":
+			switch dbType {
+			case "mysql":
+				return "1"
+			default:
+				return "TRUE"
+			}
+		case "false", "0", "no", "off", "f":
+			switch dbType {
+			case "mysql":
+				return "0"
+			default:
+				return "FALSE"
+			}
+		}
+		// Invalid boolean, quote it
+		return fmt.Sprintf("'%s'", escapeSQLString(value))
+	}
+
+	// Text and other types get quoted
+	return fmt.Sprintf("'%s'", escapeSQLString(value))
+}
+
+// escapeSQLString escapes single quotes in a string for SQL
+func escapeSQLString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// isValidNumber checks if a string represents a valid SQL number
+func isValidNumber(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+
+	// Handle negative numbers
+	if s[0] == '-' || s[0] == '+' {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+
+	hasDecimal := false
+	hasDigit := false
+
+	for i, ch := range s {
+		if ch >= '0' && ch <= '9' {
+			hasDigit = true
+			continue
+		}
+		if ch == '.' && !hasDecimal {
+			hasDecimal = true
+			continue
+		}
+		// Allow scientific notation
+		if (ch == 'e' || ch == 'E') && hasDigit && i < len(s)-1 {
+			rest := s[i+1:]
+			if rest[0] == '+' || rest[0] == '-' {
+				rest = rest[1:]
+			}
+			// Rest must be all digits
+			for _, r := range rest {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+			return len(rest) > 0
+		}
+		return false
+	}
+
+	return hasDigit
+}
+
 // generateUpdateSQL creates an UPDATE statement from the edited fields
 func (m Model) generateUpdateSQL() string {
 	if m.detailView == nil || m.queryMeta == nil || !m.queryMeta.IsEditable {
 		return ""
 	}
 
-	// Get quote character based on database type
 	q := quoteIdentifier(m.dbType)
 
 	var setClauses []string
 	for i, input := range m.detailView.inputs {
 		newVal := input.Value()
-		oldVal := m.detailView.originalRow[i]
-		if newVal != oldVal {
+		newIsNull := m.detailView.isNull[i]
+		origVal := m.detailView.originalValues[i]
+
+		// Check if value has changed (compare both value and NULL state)
+		valueChanged := newVal != origVal.Value || newIsNull != origVal.IsNull
+
+		if valueChanged {
 			colName := m.result.Columns[i]
-			// Escape single quotes
-			escapedVal := strings.ReplaceAll(newVal, "'", "''")
-			if newVal == "NULL" {
-				setClauses = append(setClauses, fmt.Sprintf("%s%s%s = NULL", q, colName, q))
-			} else {
-				setClauses = append(setClauses, fmt.Sprintf("%s%s%s = '%s'", q, colName, q, escapedVal))
-			}
+			colType := m.detailView.columnTypes[i]
+			formattedVal := formatValueForSQL(newVal, newIsNull, colType, m.dbType)
+			setClauses = append(setClauses, fmt.Sprintf("%s%s%s = %s", q, colName, q, formattedVal))
 		}
 	}
 
@@ -262,15 +448,16 @@ func (m Model) generateUpdateSQL() string {
 		return ""
 	}
 
-	// Get the ID value
-	idVal := m.detailView.originalRow[m.queryMeta.IDIndex]
-	escapedID := strings.ReplaceAll(idVal, "'", "''")
+	// Get the ID value (use original, never NULL for WHERE clause)
+	idVal := m.detailView.originalValues[m.queryMeta.IDIndex]
+	idColType := m.detailView.columnTypes[m.queryMeta.IDIndex]
+	formattedID := formatValueForSQL(idVal.Value, false, idColType, m.dbType)
 
-	return fmt.Sprintf("UPDATE %s%s%s SET %s WHERE %s%s%s = '%s'",
+	return fmt.Sprintf("UPDATE %s%s%s SET %s WHERE %s%s%s = %s",
 		q, m.queryMeta.TableName, q,
 		strings.Join(setClauses, ", "),
 		q, m.queryMeta.IDColumn, q,
-		escapedID)
+		formattedID)
 }
 
 // generateDeleteSQL creates a DELETE statement for the current row
@@ -282,13 +469,14 @@ func (m Model) generateDeleteSQL() string {
 	q := quoteIdentifier(m.dbType)
 
 	// Get the ID value
-	idVal := m.detailView.originalRow[m.queryMeta.IDIndex]
-	escapedID := strings.ReplaceAll(idVal, "'", "''")
+	idVal := m.detailView.originalValues[m.queryMeta.IDIndex]
+	idColType := m.detailView.columnTypes[m.queryMeta.IDIndex]
+	formattedID := formatValueForSQL(idVal.Value, false, idColType, m.dbType)
 
-	return fmt.Sprintf("DELETE FROM %s%s%s WHERE %s%s%s = '%s'",
+	return fmt.Sprintf("DELETE FROM %s%s%s WHERE %s%s%s = %s",
 		q, m.queryMeta.TableName, q,
 		q, m.queryMeta.IDColumn, q,
-		escapedID)
+		formattedID)
 }
 
 // generateInsertSQL creates an INSERT statement from the current field values
@@ -303,22 +491,18 @@ func (m Model) generateInsertSQL() string {
 	var values []string
 
 	for i, input := range m.detailView.inputs {
-		colName := m.result.Columns[i]
-		val := input.Value()
-
 		// Skip the ID column for INSERT (let the database auto-generate it)
 		if i == m.queryMeta.IDIndex {
 			continue
 		}
 
-		columns = append(columns, fmt.Sprintf("%s%s%s", q, colName, q))
+		colName := m.result.Columns[i]
+		val := input.Value()
+		isNull := m.detailView.isNull[i]
+		colType := m.detailView.columnTypes[i]
 
-		if val == "NULL" {
-			values = append(values, "NULL")
-		} else {
-			escapedVal := strings.ReplaceAll(val, "'", "''")
-			values = append(values, fmt.Sprintf("'%s'", escapedVal))
-		}
+		columns = append(columns, fmt.Sprintf("%s%s%s", q, colName, q))
+		values = append(values, formatValueForSQL(val, isNull, colType, m.dbType))
 	}
 
 	return fmt.Sprintf("INSERT INTO %s%s%s (%s) VALUES (%s)",

@@ -60,30 +60,89 @@ func (m Model) renderDetailView() string {
 	maxValueLines := 15 // Max lines to show for multi-line values
 	for i := m.detailView.scrollOffset; i < endIdx; i++ {
 		colName := m.result.Columns[i]
-		label := fieldLabelStyle.Render(colName + ":")
+		colType := m.detailView.columnTypes[i]
+		isNull := m.detailView.isNull[i]
+		isFocused := i == m.detailView.focusedField
+
+		// Build label with type indicator and NULL badge
+		labelText := colName + ":"
+		label := fieldLabelStyle.Render(labelText)
+
+		// Add NULL badge if field is NULL
+		nullBadge := ""
+		if isNull {
+			nullBadge = nullBadgeStyle.Render(" [NULL]")
+		}
+
+		// Add type indicator for editable fields
+		typeIndicator := ""
+		if m.queryMeta != nil && m.queryMeta.IsEditable {
+			switch colType {
+			case ColTypeNumeric:
+				typeIndicator = helpStyle.Render(" #")
+			case ColTypeBoolean:
+				typeIndicator = helpStyle.Render(" ✓")
+			}
+		}
 
 		if m.queryMeta != nil && m.queryMeta.IsEditable {
-			// Editable field - textinput has its own styling
-			inputView := m.detailView.inputs[i].View()
-			// Add a focus indicator
-			if i == m.detailView.focusedField {
-				b.WriteString(fmt.Sprintf("%s %s\n", label, inputView))
+			// Editable field
+			if isNull {
+				// Show NULL placeholder instead of input
+				nullDisplay := nullValueStyle.Render("<NULL>")
+				if isFocused {
+					nullDisplay = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#C678DD")).
+						Background(lipgloss.Color("#2C323C")).
+						Bold(true).
+						Render("<NULL>")
+				}
+				b.WriteString(fmt.Sprintf("%s%s%s %s\n", label, typeIndicator, nullBadge, nullDisplay))
 			} else {
-				b.WriteString(fmt.Sprintf("%s %s\n", label, fieldInputStyle.Render(inputView)))
+				inputView := m.detailView.inputs[i].View()
+				inputVal := m.detailView.inputs[i].Value()
+
+				// Show empty string indicator
+				if inputVal == "" {
+					emptyIndicator := emptyStringStyle.Render(`""`)
+					if isFocused {
+						b.WriteString(fmt.Sprintf("%s%s %s %s\n", label, typeIndicator, inputView, emptyIndicator))
+					} else {
+						b.WriteString(fmt.Sprintf("%s%s %s %s\n", label, typeIndicator, fieldInputStyle.Render(inputView), emptyIndicator))
+					}
+				} else {
+					// Regular value with type-aware styling
+					if isFocused {
+						b.WriteString(fmt.Sprintf("%s%s %s\n", label, typeIndicator, inputView))
+					} else {
+						b.WriteString(fmt.Sprintf("%s%s %s\n", label, typeIndicator, fieldInputStyle.Render(inputView)))
+					}
+				}
 			}
 			linesWritten++
 		} else {
 			// Read-only field - handle multi-line content
-			val := m.detailView.originalRow[i]
-			isFocused := i == m.detailView.focusedField
+			origVal := m.detailView.originalValues[i]
 
-			if strings.Contains(val, "\n") {
+			if origVal.IsNull {
+				// NULL value
+				nullDisplay := nullValueStyle.Render("<NULL>")
+				if isFocused {
+					nullDisplay = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#C678DD")).
+						Background(lipgloss.Color("#2C323C")).
+						Bold(true).
+						Render("<NULL>")
+				}
+				b.WriteString(fmt.Sprintf("%s%s %s\n", label, nullBadge, nullDisplay))
+				linesWritten++
+			} else if strings.Contains(origVal.Value, "\n") {
 				// Multi-line value - display as a block
 				b.WriteString(label)
 				b.WriteString("\n")
 				linesWritten++
 
-				lines := strings.Split(val, "\n")
+				lines := strings.Split(origVal.Value, "\n")
 				totalLines := len(lines)
 
 				// Apply content scroll offset for focused field
@@ -149,23 +208,46 @@ func (m Model) renderDetailView() string {
 				}
 			} else {
 				// Single-line value
+				val := origVal.Value
 				displayVal := val
-				// Truncate if too long, show more for focused
-				maxLen := 60
-				if isFocused {
-					maxLen = m.width - 25
-				}
-				if len(displayVal) > maxLen {
-					displayVal = displayVal[:maxLen-3] + "..."
-				}
 
-				style := fieldValueStyle
-				if isFocused {
-					style = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#E5C07B")).
-						Background(lipgloss.Color("#2C323C"))
+				// Show empty string indicator
+				if val == "" {
+					displayVal = `""`
+					style := emptyStringStyle
+					if isFocused {
+						style = lipgloss.NewStyle().
+							Foreground(lipgloss.Color("#5C6370")).
+							Background(lipgloss.Color("#2C323C")).
+							Italic(true)
+					}
+					b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
+				} else {
+					// Truncate if too long, show more for focused
+					maxLen := 60
+					if isFocused {
+						maxLen = m.width - 25
+					}
+					if len(displayVal) > maxLen {
+						displayVal = displayVal[:maxLen-3] + "..."
+					}
+
+					// Type-aware styling
+					var style lipgloss.Style
+					switch colType {
+					case ColTypeNumeric:
+						style = numericValueStyle
+					case ColTypeBoolean:
+						style = booleanValueStyle
+					default:
+						style = fieldValueStyle
+					}
+
+					if isFocused {
+						style = style.Background(lipgloss.Color("#2C323C"))
+					}
+					b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
 				}
-				b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
 				linesWritten++
 			}
 		}
@@ -192,7 +274,7 @@ func (m Model) renderDetailView() string {
 	// Help
 	var helpText string
 	if m.queryMeta != nil && m.queryMeta.IsEditable {
-		helpText = "↑↓/Tab: Navigate | PgUp/Dn: Scroll | Ctrl+U/D/I: UPDATE/DELETE/INSERT | Esc: Back | Ctrl+Q: Quit"
+		helpText = "↑↓: Navigate | Ctrl+N: Toggle NULL | Ctrl+U/D/I: UPDATE/DELETE/INSERT | Esc: Back"
 	} else {
 		helpText = "↑↓/Tab: Navigate fields | PgUp/PgDn: Scroll content | Esc: Back | Ctrl+Q: Quit"
 	}
