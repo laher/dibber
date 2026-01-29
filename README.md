@@ -1,4 +1,4 @@
-# Dabble
+# Dibber
 
 A terminal-based database client written in Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
@@ -13,26 +13,26 @@ A terminal-based database client written in Go using [Bubble Tea](https://github
 ## Installation
 
 ```bash
-go install github.com/laher/dabble@latest
+go install github.com/laher/dibber@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/laher/dabble.git
-cd dabble
-go build -o dabble .
+git clone https://github.com/laher/dibber.git
+cd dibber
+go build -o dibber .
 ```
 
 ## Usage
 
 ```bash
-dabble -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]
+dibber -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]
 ```
 
 **Options:**
 - `-type` - Database type (auto-detected from DSN if not specified)
-- `-sql-file` - SQL file to sync with the query window (default: `dabble.sql`)
+- `-sql-file` - SQL file to sync with the query window (default: `dibber.sql`)
 
 The query window content is automatically loaded from and saved to the SQL file. Saves occur when:
 - Executing a query
@@ -42,18 +42,18 @@ The query window content is automatically loaded from and saved to the SQL file.
 
 **MySQL:**
 ```bash
-dabble -dsn 'user:password@tcp(localhost:3306)/database'
+dibber -dsn 'user:password@tcp(localhost:3306)/database'
 ```
 
 **PostgreSQL:**
 ```bash
-dabble -dsn 'postgres://user:password@localhost:5432/database'
+dibber -dsn 'postgres://user:password@localhost:5432/database'
 ```
 
 **SQLite:**
 ```bash
-dabble -dsn '/path/to/database.db'
-dabble -dsn ':memory:'  # In-memory database
+dibber -dsn '/path/to/database.db'
+dibber -dsn ':memory:'  # In-memory database
 ```
 
 ### DSN Formats

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -24,6 +25,7 @@ const (
 	focusQuery focusState = iota
 	focusResults
 	focusDetail
+	focusFileDialog
 )
 
 // Styles
@@ -129,6 +131,20 @@ type DetailView struct {
 	contentScrollOffset int // scroll offset within a multi-line field
 }
 
+// FileDialogEntry represents a file or directory in the file dialog
+type FileDialogEntry struct {
+	name  string
+	isDir bool
+}
+
+// FileDialog holds the state for the file open dialog
+type FileDialog struct {
+	entries      []FileDialogEntry
+	selectedIdx  int
+	scrollOffset int
+	directory    string
+}
+
 // Model is the main Bubble Tea model
 type Model struct {
 	db               *sql.DB
@@ -150,6 +166,7 @@ type Model struct {
 	ready            bool
 	statusMessage    string
 	detailView       *DetailView
+	fileDialog       *FileDialog
 }
 
 // NewModel creates a new Model
@@ -214,6 +231,70 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
+		}
+
+		// Global save - Ctrl+S
+		if msg.String() == "ctrl+s" {
+			m.saveToFile()
+			m.statusMessage = fmt.Sprintf("Saved to %s", m.sqlFile)
+			return m, nil
+		}
+
+		// Global open - Ctrl+O
+		if msg.String() == "ctrl+o" {
+			m.openFileDialog()
+			return m, nil
+		}
+
+		// Handle file dialog keys
+		if m.focus == focusFileDialog && m.fileDialog != nil {
+			switch msg.String() {
+			case "esc":
+				m.focus = focusQuery
+				m.fileDialog = nil
+				m.statusMessage = "Open cancelled"
+				return m, nil
+			case "enter":
+				if len(m.fileDialog.entries) > 0 {
+					selected := m.fileDialog.entries[m.fileDialog.selectedIdx]
+					if selected.isDir {
+						// Navigate into directory
+						var newDir string
+						if selected.name == ".." {
+							newDir = filepath.Dir(m.fileDialog.directory)
+						} else {
+							newDir = filepath.Join(m.fileDialog.directory, selected.name)
+						}
+						m.loadDirectoryIntoDialog(newDir)
+					} else {
+						// Open the file
+						fullPath := filepath.Join(m.fileDialog.directory, selected.name)
+						m.loadFile(fullPath)
+						m.focus = focusQuery
+						m.fileDialog = nil
+					}
+				}
+				return m, nil
+			case "up", "k":
+				if m.fileDialog.selectedIdx > 0 {
+					m.fileDialog.selectedIdx--
+					if m.fileDialog.selectedIdx < m.fileDialog.scrollOffset {
+						m.fileDialog.scrollOffset = m.fileDialog.selectedIdx
+					}
+				}
+				return m, nil
+			case "down", "j":
+				if m.fileDialog.selectedIdx < len(m.fileDialog.entries)-1 {
+					m.fileDialog.selectedIdx++
+					visibleCount := 10
+					if m.fileDialog.selectedIdx >= m.fileDialog.scrollOffset+visibleCount {
+						m.fileDialog.scrollOffset = m.fileDialog.selectedIdx - visibleCount + 1
+					}
+				}
+				return m, nil
+			default:
+				return m, nil
+			}
 		}
 
 		// Resize query window - only works in results view (not when typing in query)
@@ -657,6 +738,11 @@ func (m Model) View() string {
 		return m.renderDetailView()
 	}
 
+	// Show file dialog if active
+	if m.focus == focusFileDialog && m.fileDialog != nil {
+		return m.renderFileDialog()
+	}
+
 	// Calculate heights
 	// Title: 1 line + 1 blank = 2
 	// Query box: textarea height + 2 (border) + 1 blank = textarea.Height() + 3
@@ -675,7 +761,7 @@ func (m Model) View() string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(titleStyle.Render("🍽️  Dabble - Database Client"))
+	b.WriteString(titleStyle.Render("🌱  Dibber - Database Client"))
 	b.WriteString("\n\n")
 
 	// Query input
@@ -727,7 +813,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help
-	helpText := "Ctrl+R: Execute | Tab: Focus | ↑↓: Navigate | Enter: Detail | -/+: Resize | Ctrl+Q: Quit"
+	helpText := "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Tab: Focus | Enter: Detail | -/+: Resize | Ctrl+Q: Quit"
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
@@ -763,7 +849,7 @@ func (m Model) renderDetailView() string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(titleStyle.Render("🍽️  Dabble - Database Client"))
+	b.WriteString(titleStyle.Render("🌱  Dibber - Database Client"))
 	b.WriteString("\n\n")
 
 	// Detail view header
@@ -1141,6 +1227,80 @@ func (m Model) hasUnsavedChanges() bool {
 	return m.textarea.Value() != m.lastSavedContent
 }
 
+// openFileDialog opens the file selection dialog
+func (m *Model) openFileDialog() {
+	// Get current directory
+	dir, err := os.Getwd()
+	if err != nil {
+		m.statusMessage = fmt.Sprintf("Error getting directory: %v", err)
+		return
+	}
+
+	m.loadDirectoryIntoDialog(dir)
+}
+
+// loadDirectoryIntoDialog loads the contents of a directory into the file dialog
+func (m *Model) loadDirectoryIntoDialog(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		m.statusMessage = fmt.Sprintf("Error reading directory: %v", err)
+		return
+	}
+
+	var dialogEntries []FileDialogEntry
+
+	// Add parent directory entry (if not at root)
+	if dir != "/" {
+		dialogEntries = append(dialogEntries, FileDialogEntry{name: "..", isDir: true})
+	}
+
+	// Add directories first
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			dialogEntries = append(dialogEntries, FileDialogEntry{name: entry.Name(), isDir: true})
+		}
+	}
+
+	// Then add .sql files
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".sql") {
+			dialogEntries = append(dialogEntries, FileDialogEntry{name: entry.Name(), isDir: false})
+		}
+	}
+
+	if len(dialogEntries) == 0 {
+		m.statusMessage = "No .sql files or directories found"
+		return
+	}
+
+	m.fileDialog = &FileDialog{
+		entries:     dialogEntries,
+		selectedIdx: 0,
+		directory:   dir,
+	}
+	m.focus = focusFileDialog
+	m.statusMessage = "Select a file or directory"
+}
+
+// loadFile loads the selected SQL file into the textarea
+func (m *Model) loadFile(filename string) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		m.statusMessage = fmt.Sprintf("Error reading file: %v", err)
+		return
+	}
+
+	content := string(data)
+	m.textarea.SetValue(content)
+	m.sqlFile = filename
+	m.lastSavedContent = content
+	m.statusMessage = fmt.Sprintf("Opened %s", filename)
+
+	// Clear any existing results
+	m.result = nil
+	m.queryMeta = nil
+}
+
 // executeQuery runs the SQL query and returns results
 func (m Model) executeQuery(query string) *QueryResult {
 	rows, err := m.db.Query(query)
@@ -1194,15 +1354,109 @@ func (m Model) executeQuery(query string) *QueryResult {
 	}
 }
 
+// renderFileDialog renders the file open dialog
+func (m Model) renderFileDialog() string {
+	var b strings.Builder
+
+	// Title
+	b.WriteString(titleStyle.Render("🌱  Dibber - Database Client"))
+	b.WriteString("\n\n")
+
+	// Dialog title
+	dialogTitle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FFE66D")).
+		Render("📂 Open SQL File")
+	b.WriteString(dialogTitle)
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render(fmt.Sprintf("   Directory: %s", m.fileDialog.directory)))
+	b.WriteString("\n\n")
+
+	// Entry list
+	visibleCount := 10
+	if m.height > 20 {
+		visibleCount = m.height - 15
+	}
+
+	endIdx := m.fileDialog.scrollOffset + visibleCount
+	if endIdx > len(m.fileDialog.entries) {
+		endIdx = len(m.fileDialog.entries)
+	}
+
+	fileStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#AFAFAF"))
+	dirStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ECDC4"))
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FAFAFA")).
+		Background(lipgloss.Color("#7D56F4")).
+		Bold(true)
+
+	for i := m.fileDialog.scrollOffset; i < endIdx; i++ {
+		entry := m.fileDialog.entries[i]
+		var displayName string
+		var icon string
+
+		if entry.isDir {
+			if entry.name == ".." {
+				icon = "📁 "
+				displayName = ".. (parent directory)"
+			} else {
+				icon = "📁 "
+				displayName = entry.name + "/"
+			}
+		} else {
+			icon = "📄 "
+			displayName = entry.name
+		}
+
+		if i == m.fileDialog.selectedIdx {
+			b.WriteString(selectedStyle.Render("▶ " + icon + displayName))
+		} else {
+			prefix := "  " + icon
+			if entry.isDir {
+				b.WriteString(dirStyle.Render(prefix + displayName))
+			} else {
+				b.WriteString(fileStyle.Render(prefix + displayName))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Scroll indicator
+	if len(m.fileDialog.entries) > visibleCount {
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render(fmt.Sprintf("   Showing %d-%d of %d items",
+			m.fileDialog.scrollOffset+1, endIdx, len(m.fileDialog.entries))))
+		b.WriteString("\n")
+	}
+
+	// Pad to fill screen
+	linesUsed := 6 + (endIdx - m.fileDialog.scrollOffset)
+	if len(m.fileDialog.entries) > visibleCount {
+		linesUsed += 2
+	}
+	for i := linesUsed; i < m.height-3; i++ {
+		b.WriteString("\n")
+	}
+
+	// Status bar
+	b.WriteString(statusBarStyle.Width(m.width).Render(m.statusMessage))
+	b.WriteString("\n")
+
+	// Help
+	b.WriteString(helpStyle.Render("↑↓: Select | Enter: Open/Navigate | Esc: Cancel"))
+
+	return b.String()
+}
+
 // renderBanner renders the startup ASCII art banner
 func (m Model) renderBanner() string {
-	// ASCII art for "dabble"
+	// ASCII art for "dibber"
 	banner := []string{
-		`     _       _     _     _      `,
-		`  __| | __ _| |__ | |__ | | ___ `,
-		` / _' |/ _' | '_ \| '_ \| |/ _ \`,
-		`| (_| | (_| | |_) | |_) | |  __/`,
-		` \__,_|\__,_|_.__/|_.__/|_|\___|`,
+		`     _ _ _     _               `,
+		`  __| (_) |__ | |__   ___ _ __ `,
+		` / _' | | '_ \| '_ \ / _ \ '__|`,
+		`| (_| | | |_) | |_) |  __/ |   `,
+		` \__,_|_|_.__/|_.__/ \___|_|   `,
 	}
 
 	// Colors for each line (gradient effect)

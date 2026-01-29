@@ -16,22 +16,22 @@ import (
 func main() {
 	dsn := flag.String("dsn", "", "Database connection string")
 	dbType := flag.String("type", "", "Database type: mysql, postgres, sqlite (auto-detected if not specified)")
-	sqlFile := flag.String("sql-file", "dabble.sql", "SQL file to sync with the query window")
+	sqlFile := flag.String("sql-file", "dibber.sql", "SQL file to sync with the query window")
 	flag.Parse()
 
 	if *dsn == "" {
 		fmt.Fprintln(os.Stderr, "Error: -dsn flag is required")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Usage:")
-		fmt.Fprintln(os.Stderr, "  dabble -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]")
+		fmt.Fprintln(os.Stderr, "  dibber -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, "  MySQL:    dabble -dsn 'user:password@tcp(localhost:3306)/dbname'")
-		fmt.Fprintln(os.Stderr, "  Postgres: dabble -dsn 'postgres://user:password@localhost:5432/dbname'")
-		fmt.Fprintln(os.Stderr, "  SQLite:   dabble -dsn '/path/to/database.db'")
+		fmt.Fprintln(os.Stderr, "  MySQL:    dibber -dsn 'user:password@tcp(localhost:3306)/dbname'")
+		fmt.Fprintln(os.Stderr, "  Postgres: dibber -dsn 'postgres://user:password@localhost:5432/dbname'")
+		fmt.Fprintln(os.Stderr, "  SQLite:   dibber -dsn '/path/to/database.db'")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Options:")
-		fmt.Fprintln(os.Stderr, "  -sql-file  SQL file to sync queries (default: dabble.sql)")
+		fmt.Fprintln(os.Stderr, "  -sql-file  SQL file to sync queries (default: dibber.sql)")
 		os.Exit(1)
 	}
 

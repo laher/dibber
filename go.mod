@@ -1,4 +1,4 @@
-module github.com/laher/dabble
+module github.com/laher/dibber
 
 go 1.24.9
 
