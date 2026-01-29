@@ -17,6 +17,7 @@ func main() {
 	dsn := flag.String("dsn", "", "Database connection string")
 	dbType := flag.String("type", "", "Database type: mysql, postgres, sqlite (auto-detected if not specified)")
 	sqlFile := flag.String("sql-file", "dibber.sql", "SQL file to sync with the query window")
+	outputFormat := flag.String("format", "table", "Output format for piped queries: table, csv, tsv")
 	flag.Parse()
 
 	if *dsn == "" {
@@ -25,20 +26,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Usage:")
 		fmt.Fprintln(os.Stderr, "  dibber -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, "  MySQL:    dibber -dsn 'user:password@tcp(localhost:3306)/dbname'")
-		fmt.Fprintln(os.Stderr, "  Postgres: dibber -dsn 'postgres://user:password@localhost:5432/dbname'")
-		fmt.Fprintln(os.Stderr, "  SQLite:   dibber -dsn '/path/to/database.db'")
+		fmt.Fprintln(os.Stderr, "Interactive mode:")
+		fmt.Fprintln(os.Stderr, "  dibber -dsn 'user:password@tcp(localhost:3306)/dbname'")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Pipe mode (query via stdin):")
+		fmt.Fprintln(os.Stderr, "  echo 'SELECT * FROM users' | dibber -dsn '...'")
+		fmt.Fprintln(os.Stderr, "  cat query.sql | dibber -dsn '...' -format csv")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Options:")
-		fmt.Fprintln(os.Stderr, "  -sql-file  SQL file to sync queries (default: dibber.sql)")
+		fmt.Fprintln(os.Stderr, "  -dsn       Database connection string (required)")
+		fmt.Fprintln(os.Stderr, "  -type      Database type: mysql, postgres, sqlite (auto-detected)")
+		fmt.Fprintln(os.Stderr, "  -sql-file  SQL file to sync queries in interactive mode (default: dibber.sql)")
+		fmt.Fprintln(os.Stderr, "  -format    Output format for pipe mode: table, csv, tsv (default: table)")
 		os.Exit(1)
-	}
-
-	// Load initial SQL content from file (if it exists)
-	var initialSQL string
-	if data, err := os.ReadFile(*sqlFile); err == nil {
-		initialSQL = string(data)
 	}
 
 	// Auto-detect database type if not specified
@@ -70,6 +70,20 @@ func main() {
 	if err := db.Ping(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to ping database: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Check if stdin is a pipe (not a terminal)
+	if isPiped() {
+		// Pipe mode: read query from stdin, execute, output to stdout
+		runPipeMode(db, *outputFormat)
+		return
+	}
+
+	// Interactive mode: start the Bubble Tea UI
+	// Load initial SQL content from file (if it exists)
+	var initialSQL string
+	if data, err := os.ReadFile(*sqlFile); err == nil {
+		initialSQL = string(data)
 	}
 
 	p := tea.NewProgram(NewModel(db, detectedType, *sqlFile, initialSQL), tea.WithAltScreen())
