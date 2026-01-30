@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -230,4 +231,107 @@ func (m Model) handleResultsNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// handleConnectionPickerKeys handles key events in the connection picker
+func (m Model) handleConnectionPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.connectionPicker == nil {
+		return m, nil
+	}
+
+	// Handle password input mode
+	if m.connectionPicker.awaitPassword {
+		switch msg.String() {
+		case "esc":
+			m.focus = focusQuery
+			m.connectionPicker = nil
+			m.statusMessage = "Connection switch cancelled"
+			m.textarea.Focus()
+			return m, nil
+
+		case "enter":
+			// Try to unlock with the entered password
+			password := m.connectionPicker.passwordInput
+			if password == "" {
+				m.connectionPicker.errorMessage = "Password required"
+				return m, nil
+			}
+
+			if err := m.vaultManager.Unlock(password); err != nil {
+				if errors.Is(err, ErrDecryptionFailed) {
+					m.connectionPicker.errorMessage = "Incorrect password"
+				} else {
+					m.connectionPicker.errorMessage = err.Error()
+				}
+				m.connectionPicker.passwordInput = ""
+				return m, nil
+			}
+
+			// Password correct, move to connection selection
+			m.connectionPicker.awaitPassword = false
+			m.connectionPicker.errorMessage = ""
+			m.connectionPicker.passwordInput = ""
+			return m, nil
+
+		case "backspace":
+			if len(m.connectionPicker.passwordInput) > 0 {
+				m.connectionPicker.passwordInput = m.connectionPicker.passwordInput[:len(m.connectionPicker.passwordInput)-1]
+			}
+			return m, nil
+
+		default:
+			// Add character to password (only printable chars)
+			if len(msg.String()) == 1 {
+				m.connectionPicker.passwordInput += msg.String()
+			}
+			return m, nil
+		}
+	}
+
+	// Connection selection mode
+	switch msg.String() {
+	case "esc":
+		m.focus = focusQuery
+		m.connectionPicker = nil
+		m.statusMessage = "Connection switch cancelled"
+		m.textarea.Focus()
+		return m, nil
+
+	case "enter":
+		// Switch to selected connection
+		if len(m.connectionPicker.connections) > 0 {
+			selectedName := m.connectionPicker.connections[m.connectionPicker.selectedIdx]
+			if err := m.switchConnection(selectedName); err != nil {
+				m.connectionPicker.errorMessage = err.Error()
+				return m, nil
+			}
+			m.focus = focusQuery
+			m.connectionPicker = nil
+			m.statusMessage = "Switched to: " + selectedName
+			m.textarea.Focus()
+		}
+		return m, nil
+
+	case "up", "k":
+		if m.connectionPicker.selectedIdx > 0 {
+			m.connectionPicker.selectedIdx--
+			if m.connectionPicker.selectedIdx < m.connectionPicker.scrollOffset {
+				m.connectionPicker.scrollOffset = m.connectionPicker.selectedIdx
+			}
+		}
+		return m, nil
+
+	case "down", "j":
+		if m.connectionPicker.selectedIdx < len(m.connectionPicker.connections)-1 {
+			m.connectionPicker.selectedIdx++
+			visibleCount := 10
+			if m.connectionPicker.selectedIdx >= m.connectionPicker.scrollOffset+visibleCount {
+				m.connectionPicker.scrollOffset = m.connectionPicker.selectedIdx - visibleCount + 1
+			}
+		}
+		return m, nil
+
+	default:
+		return m, nil
+	}
 }

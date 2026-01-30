@@ -10,6 +10,8 @@ const (
 	focusResults
 	focusDetail
 	focusFileDialog
+	focusConnectionPicker
+	focusPasswordPrompt
 )
 
 // ColumnType represents the general category of a database column type
@@ -94,4 +96,15 @@ func (ct ColumnType) IsBoolean() bool {
 // IsText returns true if the column type is text-like
 func (ct ColumnType) IsText() bool {
 	return ct == ColTypeText || ct == ColTypeDatetime || ct == ColTypeUnknown
+}
+
+// ConnectionPicker holds the state for the connection picker dialog
+type ConnectionPicker struct {
+	connections   []string
+	selectedIdx   int
+	scrollOffset  int
+	passwordInput string
+	showPassword  bool
+	awaitPassword bool // true when waiting for password input
+	errorMessage  string
 }

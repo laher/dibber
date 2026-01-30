@@ -9,6 +9,8 @@ import (
 
 // renderDetailView renders the detail/edit view for a row
 func (m Model) renderDetailView() string {
+	styles := m.GetStyles()
+
 	// Calculate heights
 	// Title: 1 line + 1 blank = 2
 	// Detail header: 1 line + 1 blank = 2
@@ -37,17 +39,21 @@ func (m Model) renderDetailView() string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(titleStyle.Render("🌱  Dibber - Database Client"))
+	titleText := "🌱  Dibber - Database Client"
+	if m.connectionName != "" {
+		titleText = fmt.Sprintf("🌱  Dibber - %s (%s)", m.connectionName, m.dbType)
+	}
+	b.WriteString(styles.Title.Render(titleText))
 	b.WriteString("\n\n")
 
 	// Detail view header
 	editableStatus := ""
 	if m.queryMeta != nil && m.queryMeta.IsEditable {
-		editableStatus = editableBadgeStyle.Render(" [EDITABLE]")
+		editableStatus = styles.EditableBadge.Render(" [EDITABLE]")
 	} else {
-		editableStatus = readOnlyBadgeStyle.Render(" [READ-ONLY]")
+		editableStatus = styles.ReadOnlyBadge.Render(" [READ-ONLY]")
 	}
-	b.WriteString(detailTitleStyle.Render(fmt.Sprintf("Row Detail - Row %d%s", m.detailView.rowIndex+1, editableStatus)))
+	b.WriteString(styles.DetailTitle.Render(fmt.Sprintf("Row Detail - Row %d%s", m.detailView.rowIndex+1, editableStatus)))
 	b.WriteString("\n\n")
 
 	// Fields
@@ -66,12 +72,12 @@ func (m Model) renderDetailView() string {
 
 		// Build label with type indicator and NULL badge
 		labelText := colName + ":"
-		label := fieldLabelStyle.Render(labelText)
+		label := styles.FieldLabel.Render(labelText)
 
 		// Add NULL badge if field is NULL
 		nullBadge := ""
 		if isNull {
-			nullBadge = nullBadgeStyle.Render(" [NULL]")
+			nullBadge = styles.NullBadge.Render(" [NULL]")
 		}
 
 		// Add type indicator for editable fields
@@ -79,9 +85,9 @@ func (m Model) renderDetailView() string {
 		if m.queryMeta != nil && m.queryMeta.IsEditable {
 			switch colType {
 			case ColTypeNumeric:
-				typeIndicator = helpStyle.Render(" #")
+				typeIndicator = styles.Help.Render(" #")
 			case ColTypeBoolean:
-				typeIndicator = helpStyle.Render(" ✓")
+				typeIndicator = styles.Help.Render(" ✓")
 			}
 		}
 
@@ -89,11 +95,11 @@ func (m Model) renderDetailView() string {
 			// Editable field
 			if isNull {
 				// Show NULL placeholder instead of input
-				nullDisplay := nullValueStyle.Render("<NULL>")
+				nullDisplay := styles.NullValue.Render("<NULL>")
 				if isFocused {
 					nullDisplay = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#C678DD")).
-						Background(lipgloss.Color("#2C323C")).
+						Foreground(m.theme.SyntaxNull).
+						Background(m.theme.Secondary).
 						Bold(true).
 						Render("<NULL>")
 				}
@@ -104,18 +110,18 @@ func (m Model) renderDetailView() string {
 
 				// Show empty string indicator
 				if inputVal == "" {
-					emptyIndicator := emptyStringStyle.Render(`""`)
+					emptyIndicator := styles.EmptyString.Render(`""`)
 					if isFocused {
 						b.WriteString(fmt.Sprintf("%s%s %s %s\n", label, typeIndicator, inputView, emptyIndicator))
 					} else {
-						b.WriteString(fmt.Sprintf("%s%s %s %s\n", label, typeIndicator, fieldInputStyle.Render(inputView), emptyIndicator))
+						b.WriteString(fmt.Sprintf("%s%s %s %s\n", label, typeIndicator, styles.FieldInput.Render(inputView), emptyIndicator))
 					}
 				} else {
 					// Regular value with type-aware styling
 					if isFocused {
 						b.WriteString(fmt.Sprintf("%s%s %s\n", label, typeIndicator, inputView))
 					} else {
-						b.WriteString(fmt.Sprintf("%s%s %s\n", label, typeIndicator, fieldInputStyle.Render(inputView)))
+						b.WriteString(fmt.Sprintf("%s%s %s\n", label, typeIndicator, styles.FieldInput.Render(inputView)))
 					}
 				}
 			}
@@ -126,11 +132,11 @@ func (m Model) renderDetailView() string {
 
 			if origVal.IsNull {
 				// NULL value
-				nullDisplay := nullValueStyle.Render("<NULL>")
+				nullDisplay := styles.NullValue.Render("<NULL>")
 				if isFocused {
 					nullDisplay = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#C678DD")).
-						Background(lipgloss.Color("#2C323C")).
+						Foreground(m.theme.SyntaxNull).
+						Background(m.theme.Secondary).
 						Bold(true).
 						Render("<NULL>")
 				}
@@ -170,13 +176,13 @@ func (m Model) renderDetailView() string {
 
 				// Style for the code block
 				blockStyle := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#98C379")).
+					Foreground(m.theme.SyntaxString).
 					PaddingLeft(2)
 
 				if isFocused {
 					blockStyle = blockStyle.
-						Background(lipgloss.Color("#2C323C")).
-						Foreground(lipgloss.Color("#E5C07B"))
+						Background(m.theme.Secondary).
+						Foreground(m.theme.Warning)
 				}
 
 				for _, line := range displayLines {
@@ -193,16 +199,16 @@ func (m Model) renderDetailView() string {
 				if isFocused && (scrollOffset > 0 || endLine < totalLines) {
 					remaining := totalLines - endLine
 					if scrollOffset > 0 && remaining > 0 {
-						b.WriteString(helpStyle.Render(fmt.Sprintf("  ↑ %d lines above | ↓ %d lines below (PgUp/PgDn to scroll)", scrollOffset, remaining)))
+						b.WriteString(styles.Help.Render(fmt.Sprintf("  ↑ %d lines above | ↓ %d lines below (PgUp/PgDn to scroll)", scrollOffset, remaining)))
 					} else if scrollOffset > 0 {
-						b.WriteString(helpStyle.Render(fmt.Sprintf("  ↑ %d lines above (PgUp to scroll)", scrollOffset)))
+						b.WriteString(styles.Help.Render(fmt.Sprintf("  ↑ %d lines above (PgUp to scroll)", scrollOffset)))
 					} else {
-						b.WriteString(helpStyle.Render(fmt.Sprintf("  ↓ %d more lines (PgDn to scroll)", remaining)))
+						b.WriteString(styles.Help.Render(fmt.Sprintf("  ↓ %d more lines (PgDn to scroll)", remaining)))
 					}
 					b.WriteString("\n")
 					linesWritten++
 				} else if endLine < totalLines {
-					b.WriteString(helpStyle.Render(fmt.Sprintf("  ... (%d more lines)", totalLines-endLine)))
+					b.WriteString(styles.Help.Render(fmt.Sprintf("  ... (%d more lines)", totalLines-endLine)))
 					b.WriteString("\n")
 					linesWritten++
 				}
@@ -214,11 +220,11 @@ func (m Model) renderDetailView() string {
 				// Show empty string indicator
 				if val == "" {
 					displayVal = `""`
-					style := emptyStringStyle
+					style := styles.EmptyString
 					if isFocused {
 						style = lipgloss.NewStyle().
-							Foreground(lipgloss.Color("#5C6370")).
-							Background(lipgloss.Color("#2C323C")).
+							Foreground(m.theme.TextDim).
+							Background(m.theme.Secondary).
 							Italic(true)
 					}
 					b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
@@ -236,15 +242,15 @@ func (m Model) renderDetailView() string {
 					var style lipgloss.Style
 					switch colType {
 					case ColTypeNumeric:
-						style = numericValueStyle
+						style = styles.NumericValue
 					case ColTypeBoolean:
-						style = booleanValueStyle
+						style = styles.BooleanValue
 					default:
-						style = fieldValueStyle
+						style = styles.FieldValue
 					}
 
 					if isFocused {
-						style = style.Background(lipgloss.Color("#2C323C"))
+						style = style.Background(m.theme.Secondary)
 					}
 					b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
 				}
@@ -268,7 +274,7 @@ func (m Model) renderDetailView() string {
 	}
 
 	// Status bar
-	b.WriteString(statusBarStyle.Width(m.width).Render(m.statusMessage))
+	b.WriteString(styles.StatusBar.Width(m.width).Render(m.statusMessage))
 	b.WriteString("\n")
 
 	// Help
@@ -278,7 +284,7 @@ func (m Model) renderDetailView() string {
 	} else {
 		helpText = "↑↓/Tab: Navigate fields | PgUp/PgDn: Scroll content | Esc: Back | Ctrl+Q: Quit"
 	}
-	b.WriteString(helpStyle.Render(helpText))
+	b.WriteString(styles.Help.Render(helpText))
 
 	return b.String()
 }

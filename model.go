@@ -37,10 +37,18 @@ type Model struct {
 	statusMessage    string
 	detailView       *DetailView
 	fileDialog       *FileDialog
+
+	// Connection management
+	vaultManager     *VaultManager
+	connectionName   string            // current connection name (if using saved connection)
+	connectionPicker *ConnectionPicker // for interactive connection switching
+
+	// Theming
+	theme Theme // current theme
 }
 
 // NewModel creates a new Model
-func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string) Model {
+func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string, vm *VaultManager, connectionName string, theme Theme) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Enter SQL query..."
 	ta.Focus()
@@ -61,6 +69,9 @@ func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string) Mode
 		lastSavedContent: initialSQL,
 		textarea:         ta,
 		focus:            focusQuery,
+		vaultManager:     vm,
+		connectionName:   connectionName,
+		theme:            theme,
 	}
 }
 
@@ -119,6 +130,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle file dialog keys
 		if m.focus == focusFileDialog && m.fileDialog != nil {
 			return m.handleFileDialogKeys(msg)
+		}
+
+		// Handle connection picker keys
+		if m.focus == focusConnectionPicker && m.connectionPicker != nil {
+			return m.handleConnectionPickerKeys(msg)
+		}
+
+		// Open connection picker - Ctrl+P
+		if msg.String() == "ctrl+p" {
+			if m.vaultManager != nil {
+				m.openConnectionPicker()
+			} else {
+				m.statusMessage = "No vault configured - add connections with -add-connection"
+			}
+			return m, nil
 		}
 
 		// Resize query window - works in results/banner view (not when typing in query)
@@ -314,4 +340,86 @@ func (m *Model) openDetailView() {
 		visibleFields:  visibleFields,
 	}
 	m.focus = focusDetail
+}
+
+// openConnectionPicker opens the connection picker dialog
+func (m *Model) openConnectionPicker() {
+	if m.vaultManager == nil {
+		m.statusMessage = "No vault configured"
+		return
+	}
+
+	// Check if vault has any connections
+	if err := m.vaultManager.LoadConfig(); err != nil {
+		m.statusMessage = "Failed to load config"
+		return
+	}
+
+	if !m.vaultManager.HasVault() {
+		m.statusMessage = "No saved connections - add with -add-connection"
+		return
+	}
+
+	connections := m.vaultManager.ListConnections()
+	if len(connections) == 0 {
+		m.statusMessage = "No saved connections"
+		return
+	}
+
+	m.connectionPicker = &ConnectionPicker{
+		connections:   connections,
+		selectedIdx:   0,
+		scrollOffset:  0,
+		awaitPassword: !m.vaultManager.IsUnlocked(),
+	}
+	m.focus = focusConnectionPicker
+}
+
+// switchConnection switches to a different database connection
+func (m *Model) switchConnection(name string) error {
+	if m.vaultManager == nil {
+		return fmt.Errorf("no vault manager")
+	}
+
+	dsn, dbType, themeName, err := m.vaultManager.GetConnection(name)
+	if err != nil {
+		return err
+	}
+
+	// Auto-detect type if not specified
+	if dbType == "" {
+		dbType = detectDBType(dsn)
+	}
+
+	driverName := getDriverName(dbType)
+	if driverName == "" {
+		return fmt.Errorf("unknown database type for %q", name)
+	}
+
+	// Close old connection
+	if m.db != nil {
+		_ = m.db.Close()
+	}
+
+	// Open new connection
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("failed to ping: %w", err)
+	}
+
+	m.db = db
+	m.dbType = dbType
+	m.connectionName = name
+	m.theme = GetTheme(themeName)
+
+	// Clear previous results
+	m.result = nil
+	m.queryMeta = nil
+
+	return nil
 }

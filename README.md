@@ -13,6 +13,8 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), dibber prov
 - **SQL Generation**: Automatically generate UPDATE, DELETE, and INSERT statements from your edits
 - **Pipe Mode**: Execute queries from stdin and output results in table, CSV, or TSV format
 - **Multi-Database**: Works with MySQL, PostgreSQL, and SQLite
+- **Saved Connections**: Store database connections securely with encryption
+- **Themes**: Visual themes to distinguish between environments (e.g., red for production)
 
 ## Installation
 
@@ -31,14 +33,20 @@ go build -o dibber .
 ## Quick Start
 
 ```bash
-# Interactive mode
+# Interactive mode with direct DSN
 dibber -dsn 'postgres://user:pass@localhost/mydb'
 
+# Save a connection for reuse (encrypted)
+dibber -add-connection prod -dsn 'postgres://user:pass@prod-host/db' -theme production
+
+# Use a saved connection
+dibber -connection prod
+
 # Pipe mode - quick queries from the command line
-echo 'SELECT * FROM users LIMIT 10' | dibber -dsn 'postgres://...'
+echo 'SELECT * FROM users LIMIT 10' | dibber -connection prod
 
 # Export to CSV
-echo 'SELECT * FROM orders' | dibber -dsn '...' -format csv > orders.csv
+echo 'SELECT * FROM orders' | dibber -connection prod -format csv > orders.csv
 ```
 
 ## Usage
@@ -76,10 +84,22 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 
 | Option | Description |
 |--------|-------------|
-| `-dsn` | Database connection string (required) |
+| `-dsn` | Database connection string (use this OR `-connection`) |
+| `-connection` | Named connection from `~/.dibber.yaml` |
 | `-type` | Database type: `mysql`, `postgres`, `sqlite` (auto-detected from DSN) |
 | `-sql-file` | SQL file to sync with query editor (default: `dibber.sql`) |
 | `-format` | Output format for pipe mode: `table`, `csv`, `tsv` (default: `table`) |
+
+### Connection Management Options
+
+| Option | Description |
+|--------|-------------|
+| `-add-connection` | Add a new named connection (requires `-dsn`) |
+| `-remove-connection` | Remove a saved connection |
+| `-list-connections` | List all saved connections |
+| `-change-password` | Change the master password |
+| `-theme` | Theme for the connection (use with `-add-connection`) |
+| `-list-themes` | List all available themes |
 
 ### Connection Examples
 
@@ -107,7 +127,152 @@ dibber -dsn ':memory:'  # In-memory database
 | PostgreSQL | `postgres://user:password@host:port/database` |
 | SQLite | `/path/to/file.db` or `:memory:` |
 
+## Saved Connections
+
+Dibber can store database connections for reuse. Connections are encrypted and stored in `~/.dibber.yaml`.
+
+### Adding a Connection
+
+```bash
+# Add a connection with a name
+dibber -add-connection mydb -dsn 'postgres://user:pass@localhost/mydb'
+
+# Add with a specific theme
+dibber -add-connection prod -dsn 'postgres://...' -theme production
+
+# Add with explicit database type
+dibber -add-connection legacy -dsn '...' -type mysql -theme gruvbox
+```
+
+On first use, you'll be prompted to create a master password. This password protects all your saved connections.
+
+### Using a Saved Connection
+
+```bash
+# Interactive mode
+dibber -connection mydb
+
+# Pipe mode
+echo 'SELECT * FROM users' | dibber -connection mydb -format csv
+```
+
+You'll be prompted for your master password to unlock the connection vault.
+
+### Managing Connections
+
+```bash
+# List all saved connections
+dibber -list-connections
+
+# Remove a connection
+dibber -remove-connection mydb
+
+# Change the master password
+dibber -change-password
+```
+
+### Switching Connections at Runtime
+
+Press **Ctrl+P** while running dibber to open the connection picker. If your vault is locked, you'll be prompted for your master password. Select a connection and press Enter to switch.
+
+### Security & Encryption
+
+Saved connections are protected with industry-standard encryption:
+
+| Component | Implementation |
+|-----------|----------------|
+| **Key Derivation** | Argon2id (OWASP recommended) |
+| **Encryption** | AES-256-GCM (authenticated encryption) |
+| **Architecture** | Envelope encryption pattern |
+
+**How it works:**
+
+1. **Master Password** - You choose a master password (min 8 characters)
+2. **Key Derivation** - Argon2id derives a key from your password + random salt
+   - Parameters: 64MB memory, 3 iterations, 4 threads
+   - This makes brute-force attacks computationally expensive
+3. **Data Key** - A random 256-bit data key is generated and encrypted with the derived key
+4. **DSN Encryption** - Each DSN is encrypted with AES-256-GCM using the data key
+   - Each encryption uses a unique random nonce
+   - GCM provides authentication (tamper detection)
+5. **Storage** - `~/.dibber.yaml` stores:
+   - Salt (for key derivation)
+   - Encrypted data key
+   - Encrypted DSNs (with nonce prepended)
+
+**Security properties:**
+
+- DSNs are never stored in plaintext
+- The master password is never stored - only a derived key can decrypt the data key
+- Each DSN uses a unique nonce, so identical DSNs produce different ciphertext
+- File permissions are set to `0600` (owner read/write only)
+- The data key is held in memory only while the vault is unlocked
+- Changing your password re-encrypts the data key (DSNs don't need re-encryption)
+
+**What's NOT protected:**
+
+- Connection names and themes are stored in plaintext (only DSNs are encrypted)
+- Memory is not securely wiped (Go doesn't guarantee secure memory erasure)
+- No protection against keyloggers or malware with memory access
+
+## Themes
+
+Themes change the color scheme of the UI, making it easy to visually distinguish between environments.
+
+### Available Themes
+
+| Theme | Description |
+|-------|-------------|
+| `default` | Default purple theme |
+| `dracula` | Dracula dark theme |
+| `monokai` | Classic Monokai theme |
+| `nord` | Arctic Nord theme |
+| `gruvbox` | Retro Gruvbox theme |
+| `tokyo-night` | Tokyo Night theme |
+| `catppuccin` | Catppuccin Mocha theme |
+| `solarized` | Solarized Dark theme |
+| `forest` | Calming green forest theme |
+| `ocean` | Deep ocean blue theme |
+| `production` | **Red warning theme for production databases** |
+
+```bash
+# List all available themes
+dibber -list-themes
+```
+
+### Using Themes
+
+Themes are associated with saved connections:
+
+```bash
+# Add a connection with a theme
+dibber -add-connection prod -dsn '...' -theme production
+dibber -add-connection dev -dsn '...' -theme dracula
+dibber -add-connection staging -dsn '...' -theme nord
+
+# The theme applies automatically when you use the connection
+dibber -connection prod  # Red UI - unmistakably production!
+```
+
+The title bar shows the current theme when using a non-default theme:
+
+```
+🌱  Dibber - prod (postgres) [production]
+```
+
+### The Production Theme
+
+The `production` theme uses aggressive red coloring throughout the UI. This makes it immediately obvious when you're connected to a production database, reducing the risk of accidentally running destructive queries in the wrong environment.
+
 ## Key Bindings
+
+### Global Keys
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+P` | Open connection picker (switch databases) |
+| `Ctrl+S` | Save SQL file |
+| `Ctrl+Q` | Quit |
 
 ### Query View
 
@@ -118,7 +283,6 @@ The query editor supports multiple queries separated by semicolons (`;`). When y
 | `Ctrl+R` or `F5` | Execute query under cursor |
 | `Tab` | Switch focus to results |
 | `Ctrl+O` | Open file dialog |
-| `Ctrl+Q` | Quit |
 
 **Multi-query example:**
 ```sql

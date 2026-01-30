@@ -8,6 +8,8 @@ import (
 
 // renderBanner renders the startup ASCII art banner
 func (m Model) renderBanner() string {
+	styles := m.GetStyles()
+
 	// ASCII art for "dibber"
 	banner := []string{
 		`     _ _ _     _               `,
@@ -17,13 +19,13 @@ func (m Model) renderBanner() string {
 		` \__,_|_|_.__/|_.__/ \___|_|   `,
 	}
 
-	// Colors for each line (gradient effect)
-	colors := []string{
-		"#FF6B6B", // coral red
-		"#FFE66D", // yellow
-		"#4ECDC4", // teal
-		"#45B7D1", // sky blue
-		"#96CEB4", // sage green
+	// Use theme colors for gradient effect
+	colors := []lipgloss.Color{
+		m.theme.Danger,     // line 1
+		m.theme.Warning,    // line 2
+		m.theme.Success,    // line 3
+		m.theme.Primary,    // line 4
+		m.theme.SyntaxNull, // line 5
 	}
 
 	var b strings.Builder
@@ -32,7 +34,7 @@ func (m Model) renderBanner() string {
 	for i, line := range banner {
 		color := colors[i%len(colors)]
 		style := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(color)).
+			Foreground(color).
 			Bold(true)
 		b.WriteString(style.Render(line))
 		b.WriteString("\n")
@@ -40,7 +42,7 @@ func (m Model) renderBanner() string {
 
 	// Tagline
 	tagline := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888")).
+		Foreground(m.theme.TextDim).
 		Italic(true).
 		Render("        A terminal database client")
 	b.WriteString("\n")
@@ -48,7 +50,7 @@ func (m Model) renderBanner() string {
 	b.WriteString("\n\n")
 
 	// Instructions
-	instructions := helpStyle.Render("  Enter a SQL query and press Ctrl+R to execute")
+	instructions := styles.Help.Render("  Enter a SQL query and press Ctrl+R to execute")
 	b.WriteString(instructions)
 	b.WriteString("\n")
 
@@ -60,6 +62,8 @@ func (m Model) renderTable() string {
 	if m.result == nil || len(m.result.Columns) == 0 {
 		return ""
 	}
+
+	styles := m.GetStyles()
 
 	// Calculate column widths
 	colWidths := make([]int, len(m.result.Columns))
@@ -100,7 +104,7 @@ func (m Model) renderTable() string {
 	for i, col := range m.result.Columns {
 		cell := truncateString(col, colWidths[i])
 		cell = padRight(cell, colWidths[i])
-		headerCells = append(headerCells, tableHeaderStyle.Render(cell))
+		headerCells = append(headerCells, styles.TableHeader.Render(cell))
 	}
 	b.WriteString(strings.Join(headerCells, ""))
 	b.WriteString("\n")
@@ -127,14 +131,14 @@ func (m Model) renderTable() string {
 			if cell.IsNull {
 				// NULL values get special styling
 				if isSelected {
-					cells = append(cells, selectedRowStyle.Render(nullCellStyle.Render(cellStr)))
+					cells = append(cells, styles.SelectedRow.Render(styles.NullCell.Render(cellStr)))
 				} else {
-					cells = append(cells, nullCellStyle.Render(cellStr))
+					cells = append(cells, styles.NullCell.Render(cellStr))
 				}
 			} else if isSelected {
-				cells = append(cells, selectedRowStyle.Render(tableCellStyle.Render(cellStr)))
+				cells = append(cells, styles.SelectedRow.Render(styles.TableCell.Render(cellStr)))
 			} else {
-				cells = append(cells, tableCellStyle.Render(cellStr))
+				cells = append(cells, styles.TableCell.Render(cellStr))
 			}
 		}
 		b.WriteString(strings.Join(cells, ""))
