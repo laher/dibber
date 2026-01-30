@@ -15,7 +15,7 @@ const configFileName = ".dibber.yaml"
 
 var (
 	ErrConfigNotFound     = errors.New("config file not found")
-	ErrVaultNotConfigured = errors.New("vault not configured - run with -add-connection first")
+	ErrVaultNotConfigured = errors.New("vault not configured - run with -add-conn first")
 	ErrConnectionNotFound = errors.New("connection not found")
 	ErrVaultLocked        = errors.New("vault is locked")
 )

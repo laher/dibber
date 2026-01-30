@@ -37,16 +37,16 @@ go build -o dibber .
 dibber -dsn 'postgres://user:pass@localhost/mydb'
 
 # Save a connection for reuse (encrypted)
-dibber -add-connection prod -dsn 'postgres://user:pass@prod-host/db' -theme production
+dibber -add-conn prod -dsn 'postgres://user:pass@prod-host/db' -theme production
 
 # Use a saved connection
-dibber -connection prod
+dibber -conn prod
 
 # Pipe mode - quick queries from the command line
-echo 'SELECT * FROM users LIMIT 10' | dibber -connection prod
+echo 'SELECT * FROM users LIMIT 10' | dibber -conn prod
 
 # Export to CSV
-echo 'SELECT * FROM orders' | dibber -connection prod -format csv > orders.csv
+echo 'SELECT * FROM orders' | dibber -conn prod -format csv > orders.csv
 ```
 
 ## Usage
@@ -84,8 +84,8 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 
 | Option | Description |
 |--------|-------------|
-| `-dsn` | Database connection string (use this OR `-connection`) |
-| `-connection` | Named connection from `~/.dibber.yaml` |
+| `-dsn` | Database connection string (use this OR `-conn`) |
+| `-conn` | Named connection from `~/.dibber.yaml` |
 | `-type` | Database type: `mysql`, `postgres`, `sqlite` (auto-detected from DSN) |
 | `-sql-file` | SQL file to sync with query editor (default: `dibber.sql`) |
 | `-format` | Output format for pipe mode: `table`, `csv`, `tsv` (default: `table`) |
@@ -94,26 +94,29 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 
 | Option | Description |
 |--------|-------------|
-| `-add-connection` | Add a new named connection (requires `-dsn`) |
-| `-remove-connection` | Remove a saved connection |
-| `-list-connections` | List all saved connections |
+| `-add-conn` | Add a new named connection (requires `-dsn`) |
+| `-remove-conn` | Remove a saved connection |
+| `-list-conns` | List all saved connections |
 | `-change-password` | Change the master password |
-| `-theme` | Theme for the connection (use with `-add-connection`) |
+| `-theme` | Theme for the connection (use with `-add-conn`) |
 | `-list-themes` | List all available themes |
 
 ### Connection Examples
 
 **MySQL:**
+
 ```bash
 dibber -dsn 'user:password@tcp(localhost:3306)/database'
 ```
 
 **PostgreSQL:**
+
 ```bash
 dibber -dsn 'postgres://user:password@localhost:5432/database'
 ```
 
 **SQLite:**
+
 ```bash
 dibber -dsn '/path/to/database.db'
 dibber -dsn ':memory:'  # In-memory database
@@ -135,13 +138,13 @@ Dibber can store database connections for reuse. Connections are encrypted and s
 
 ```bash
 # Add a connection with a name
-dibber -add-connection mydb -dsn 'postgres://user:pass@localhost/mydb'
+dibber -add-conn mydb -dsn 'postgres://user:pass@localhost/mydb'
 
 # Add with a specific theme
-dibber -add-connection prod -dsn 'postgres://...' -theme production
+dibber -add-conn prod -dsn 'postgres://...' -theme production
 
 # Add with explicit database type
-dibber -add-connection legacy -dsn '...' -type mysql -theme gruvbox
+dibber -add-conn legacy -dsn '...' -type mysql -theme gruvbox
 ```
 
 On first use, you'll be prompted to create a master password. This password protects all your saved connections.
@@ -150,10 +153,10 @@ On first use, you'll be prompted to create a master password. This password prot
 
 ```bash
 # Interactive mode
-dibber -connection mydb
+dibber -conn mydb
 
 # Pipe mode
-echo 'SELECT * FROM users' | dibber -connection mydb -format csv
+echo 'SELECT * FROM users' | dibber -conn mydb -format csv
 ```
 
 You'll be prompted for your master password to unlock the connection vault.
@@ -162,10 +165,10 @@ You'll be prompted for your master password to unlock the connection vault.
 
 ```bash
 # List all saved connections
-dibber -list-connections
+dibber -list-conns
 
 # Remove a connection
-dibber -remove-connection mydb
+dibber -remove-conn mydb
 
 # Change the master password
 dibber -change-password
@@ -246,12 +249,12 @@ Themes are associated with saved connections:
 
 ```bash
 # Add a connection with a theme
-dibber -add-connection prod -dsn '...' -theme production
-dibber -add-connection dev -dsn '...' -theme dracula
-dibber -add-connection staging -dsn '...' -theme nord
+dibber -add-conn prod -dsn '...' -theme production
+dibber -add-conn dev -dsn '...' -theme dracula
+dibber -add-conn staging -dsn '...' -theme nord
 
 # The theme applies automatically when you use the connection
-dibber -connection prod  # Red UI - unmistakably production!
+dibber -conn prod  # Red UI - unmistakably production!
 ```
 
 The title bar shows the current theme when using a non-default theme:
@@ -285,6 +288,7 @@ The query editor supports multiple queries separated by semicolons (`;`). When y
 | `Ctrl+O` | Open file dialog |
 
 **Multi-query example:**
+
 ```sql
 SELECT * FROM users;
 
@@ -326,11 +330,13 @@ UPDATE users SET name = 'test' WHERE id = 1;
 The detail view allows editing only when the query is "simple enough":
 
 **Editable queries must:**
+
 - Be a `SELECT` statement
 - Query a single table (no JOINs)
 - Return an `id` column
 
 **Non-editable queries include:**
+
 - Queries with `JOIN`s
 - Queries with aggregation (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, etc.)
 - Queries with `GROUP BY`, `HAVING`, or `DISTINCT`

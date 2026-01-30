@@ -19,17 +19,17 @@ import (
 
 func main() {
 	// Connection flags
-	dsn := flag.String("dsn", "", "Database connection string (use this OR -connection)")
-	connectionName := flag.String("connection", "", "Named connection from ~/.dibber.yaml")
+	dsn := flag.String("dsn", "", "Database connection string (use this OR -conn)")
+	connectionName := flag.String("conn", "", "Named connection from ~/.dibber.yaml")
 	dbType := flag.String("type", "", "Database type: mysql, postgres, sqlite (auto-detected if not specified)")
 
 	// Connection management flags
-	addConnection := flag.String("add-connection", "", "Add a new named connection (requires -dsn)")
-	removeConnection := flag.String("remove-connection", "", "Remove a saved connection")
-	listConnections := flag.Bool("list-connections", false, "List all saved connections")
+	addConnection := flag.String("add-conn", "", "Add a new named connection (requires -dsn)")
+	removeConnection := flag.String("remove-conn", "", "Remove a saved connection")
+	listConnections := flag.Bool("list-conns", false, "List all saved connections")
 	listThemes := flag.Bool("list-themes", false, "List all available themes")
 	changePassword := flag.Bool("change-password", false, "Change the master password")
-	themeName := flag.String("theme", "", "Theme for the connection (use with -add-connection)")
+	themeName := flag.String("theme", "", "Theme for the connection (use with -add-conn)")
 
 	// Other flags
 	sqlFile := flag.String("sql-file", "dibber.sql", "SQL file to sync with the query window")
@@ -62,7 +62,7 @@ func main() {
 		return
 	}
 
-	// Determine DSN from either -dsn or -connection
+	// Determine DSN from either -dsn or -conn
 	connInfo, err := resolveDSN(*dsn, *connectionName, *dbType)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -133,25 +133,25 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Usage:")
 	fmt.Fprintln(os.Stderr, "  dibber -dsn 'connection_string' [-type mysql|postgres|sqlite]")
-	fmt.Fprintln(os.Stderr, "  dibber -connection 'name'       (use a saved connection)")
+	fmt.Fprintln(os.Stderr, "  dibber -conn 'name'       (use a saved connection)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Connection Management:")
-	fmt.Fprintln(os.Stderr, "  dibber -add-connection 'name' -dsn 'connection_string' [-type db_type]")
-	fmt.Fprintln(os.Stderr, "  dibber -remove-connection 'name'")
-	fmt.Fprintln(os.Stderr, "  dibber -list-connections")
+	fmt.Fprintln(os.Stderr, "  dibber -add-conn 'name' -dsn 'connection_string' [-type db_type]")
+	fmt.Fprintln(os.Stderr, "  dibber -remove-conn 'name'")
+	fmt.Fprintln(os.Stderr, "  dibber -list-conns")
 	fmt.Fprintln(os.Stderr, "  dibber -change-password")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Interactive mode:")
 	fmt.Fprintln(os.Stderr, "  dibber -dsn 'user:password@tcp(localhost:3306)/dbname'")
-	fmt.Fprintln(os.Stderr, "  dibber -connection prod")
+	fmt.Fprintln(os.Stderr, "  dibber -conn prod")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Pipe mode (query via stdin):")
 	fmt.Fprintln(os.Stderr, "  echo 'SELECT * FROM users' | dibber -dsn '...'")
-	fmt.Fprintln(os.Stderr, "  cat query.sql | dibber -connection prod -format csv")
+	fmt.Fprintln(os.Stderr, "  cat query.sql | dibber -conn prod -format csv")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Options:")
 	fmt.Fprintln(os.Stderr, "  -dsn             Database connection string")
-	fmt.Fprintln(os.Stderr, "  -connection      Named connection from ~/.dibber.yaml")
+	fmt.Fprintln(os.Stderr, "  -conn      Named connection from ~/.dibber.yaml")
 	fmt.Fprintln(os.Stderr, "  -type            Database type: mysql, postgres, sqlite (auto-detected)")
 	fmt.Fprintln(os.Stderr, "  -sql-file        SQL file to sync queries (default: dibber.sql)")
 	fmt.Fprintln(os.Stderr, "  -format          Output format for pipe mode: table, csv, tsv (default: table)")
@@ -179,7 +179,7 @@ func resolveDSN(dsn, connectionName, dbType string) (connectionInfo, error) {
 		}
 
 		if !vm.HasVault() {
-			return connectionInfo{}, errors.New("no saved connections - add one with -add-connection first")
+			return connectionInfo{}, errors.New("no saved connections - add one with -add-conn first")
 		}
 
 		// Prompt for password to unlock
@@ -208,7 +208,7 @@ func resolveDSN(dsn, connectionName, dbType string) (connectionInfo, error) {
 		return connectionInfo{dsn: connDSN, dbType: dbType, theme: connTheme}, nil
 	}
 
-	return connectionInfo{}, errors.New("either -dsn or -connection is required")
+	return connectionInfo{}, errors.New("either -dsn or -conn is required")
 }
 
 // handleListConnections lists all saved connections
@@ -244,7 +244,7 @@ func handleListThemes() {
 		fmt.Printf("  - %-14s %s\n", name, theme.Description)
 	}
 	fmt.Println()
-	fmt.Println("Use with -add-connection: dibber -add-connection mydb -dsn '...' -theme dracula")
+	fmt.Println("Use with -add-conn: dibber -add-conn mydb -dsn '...' -theme dracula")
 }
 
 // handleAddConnection adds a new connection

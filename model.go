@@ -142,7 +142,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.vaultManager != nil {
 				m.openConnectionPicker()
 			} else {
-				m.statusMessage = "No vault configured - add connections with -add-connection"
+				m.statusMessage = "No vault configured - add connections with -add-conn"
 			}
 			return m, nil
 		}
@@ -356,7 +356,7 @@ func (m *Model) openConnectionPicker() {
 	}
 
 	if !m.vaultManager.HasVault() {
-		m.statusMessage = "No saved connections - add with -add-connection"
+		m.statusMessage = "No saved connections - add with -add-conn"
 		return
 	}
 
