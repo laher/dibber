@@ -1,5 +1,12 @@
 # Dibber
 
+<img src="https://upload.wikimedia.org/wikipedia/commons/4/45/Dibble_%28PSF%29.png" alt="A dibber" width="200" align="right">
+
+[![Tests](https://github.com/laher/dibber/actions/workflows/test.yml/badge.svg)](https://github.com/laher/dibber/actions/workflows/test.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/laher/dibber)](https://goreportcard.com/report/github.com/laher/dibber)
+[![Go Reference](https://pkg.go.dev/badge/github.com/laher/dibber.svg)](https://pkg.go.dev/github.com/laher/dibber)
+[![License](https://img.shields.io/github/license/laher/dibber)](LICENSE)
+
 **Dibber is a terminal-based SQL client with data editing capabilities.**
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), dibber provides an interactive TUI for exploring and modifying data across MySQL, PostgreSQL, and SQLite databases. It also supports a non-interactive pipe mode for scripting and automation.
@@ -182,6 +189,7 @@ You'll be prompted for your master password to unlock the connection vault.
 ### Managing Connections
 
 **Via UI (Ctrl+P):**
+
 - Press **a** to add a new connection
 - Press **d** to delete the selected connection
 - Use **↑↓** to navigate, **Enter** to connect
