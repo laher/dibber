@@ -3,7 +3,173 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/rivo/uniseg"
 )
+
+// renderHighlightedQuery renders the query textarea content with SQL syntax highlighting
+func (m Model) renderHighlightedQuery() string {
+	content := m.textarea.Value()
+	lines := strings.Split(content, "\n")
+
+	// Get cursor position
+	cursorLine := m.textarea.Line()
+	lineInfo := m.textarea.LineInfo()
+	cursorCol := lineInfo.CharOffset
+
+	// Get textarea dimensions
+	height := m.textarea.Height()
+	width := m.textarea.Width()
+
+	// Calculate scroll offset - keep cursor visible
+	scrollOffset := 0
+	if cursorLine >= height {
+		scrollOffset = cursorLine - height + 1
+	}
+
+	// Line number width (for alignment)
+	lineNumWidth := len(fmt.Sprintf("%d", len(lines)))
+	if lineNumWidth < 2 {
+		lineNumWidth = 2
+	}
+
+	// Styles for line numbers
+	lineNumStyle := lipgloss.NewStyle().
+		Foreground(m.theme.TextDim).
+		Width(lineNumWidth).
+		Align(lipgloss.Right)
+
+	cursorLineNumStyle := lipgloss.NewStyle().
+		Foreground(m.theme.Primary).
+		Bold(true).
+		Width(lineNumWidth).
+		Align(lipgloss.Right)
+
+	// Cursor style
+	cursorStyle := lipgloss.NewStyle().
+		Background(m.theme.TextBright).
+		Foreground(m.theme.Secondary)
+
+	var b strings.Builder
+	isFocused := m.focus == focusQuery
+
+	// Render visible lines
+	for i := scrollOffset; i < len(lines) && i < scrollOffset+height; i++ {
+		line := lines[i]
+
+		// Line number
+		if m.textarea.ShowLineNumbers {
+			if i == cursorLine {
+				b.WriteString(cursorLineNumStyle.Render(fmt.Sprintf("%d", i+1)))
+			} else {
+				b.WriteString(lineNumStyle.Render(fmt.Sprintf("%d", i+1)))
+			}
+			b.WriteString(" ")
+		}
+
+		// Apply syntax highlighting to the line
+		if m.highlighter != nil {
+			highlightedLine := m.highlighter.HighlightLine(line)
+
+			// If this is the cursor line and we're focused, insert cursor
+			if isFocused && i == cursorLine {
+				// We need to insert cursor into the highlighted line
+				// This is tricky because highlightedLine contains ANSI codes
+				// We need to work with the original line for cursor positioning
+				b.WriteString(m.insertCursor(line, highlightedLine, cursorCol, cursorStyle, width))
+			} else {
+				b.WriteString(m.truncateLine(highlightedLine, width))
+			}
+		} else {
+			// No highlighter, render plain
+			if isFocused && i == cursorLine {
+				b.WriteString(m.insertCursorPlain(line, cursorCol, cursorStyle, width))
+			} else {
+				b.WriteString(m.truncateLine(line, width))
+			}
+		}
+
+		if i < scrollOffset+height-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	// Pad with empty lines if content is shorter than height
+	linesRendered := len(lines) - scrollOffset
+	if linesRendered < 0 {
+		linesRendered = 0
+	}
+	if linesRendered > height {
+		linesRendered = height
+	}
+	for i := linesRendered; i < height; i++ {
+		if m.textarea.ShowLineNumbers {
+			b.WriteString(strings.Repeat(" ", lineNumWidth+1))
+		}
+		if i < height-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	return b.String()
+}
+
+// insertCursor inserts a cursor character into a highlighted line at the correct position
+func (m Model) insertCursor(plainLine, highlightedLine string, cursorCol int, cursorStyle lipgloss.Style, maxWidth int) string {
+	// If cursor is at or past end of line, append cursor block
+	plainRunes := []rune(plainLine)
+	if cursorCol >= len(plainRunes) {
+		return m.truncateLine(highlightedLine, maxWidth-1) + cursorStyle.Render(" ")
+	}
+
+	// We need to find where in the plainLine the cursor is, then insert styling
+	// This is complex because the highlighted line has ANSI codes
+	// Strategy: re-highlight the parts before and after cursor separately
+
+	beforeCursor := string(plainRunes[:cursorCol])
+	cursorChar := string(plainRunes[cursorCol])
+	afterCursor := string(plainRunes[cursorCol+1:])
+
+	// Highlight each part
+	var result strings.Builder
+	if beforeCursor != "" {
+		result.WriteString(m.highlighter.HighlightLine(beforeCursor))
+	}
+	result.WriteString(cursorStyle.Render(cursorChar))
+	if afterCursor != "" {
+		result.WriteString(m.highlighter.HighlightLine(afterCursor))
+	}
+
+	return m.truncateLine(result.String(), maxWidth)
+}
+
+// insertCursorPlain inserts a cursor into a plain (non-highlighted) line
+func (m Model) insertCursorPlain(line string, cursorCol int, cursorStyle lipgloss.Style, maxWidth int) string {
+	runes := []rune(line)
+	if cursorCol >= len(runes) {
+		return m.truncateLine(line, maxWidth-1) + cursorStyle.Render(" ")
+	}
+
+	before := string(runes[:cursorCol])
+	cursorChar := string(runes[cursorCol])
+	after := string(runes[cursorCol+1:])
+
+	return m.truncateLine(before+cursorStyle.Render(cursorChar)+after, maxWidth)
+}
+
+// truncateLine truncates a line to fit within maxWidth, accounting for ANSI codes
+func (m Model) truncateLine(line string, maxWidth int) string {
+	// Use uniseg to properly count grapheme clusters (visible width)
+	width := uniseg.StringWidth(lipgloss.NewStyle().Render(line))
+	if width <= maxWidth {
+		return line
+	}
+
+	// Truncate by visible width - this is approximate for styled text
+	// For now, just return as-is since the query box has its own width handling
+	return line
+}
 
 // View implements tea.Model
 func (m Model) View() string {
@@ -60,12 +226,12 @@ func (m Model) View() string {
 	b.WriteString(styles.Title.Render(titleText))
 	b.WriteString("\n\n")
 
-	// Query input
+	// Query input with syntax highlighting
 	queryBoxStyle := styles.QueryBox
 	if m.focus == focusQuery {
 		queryBoxStyle = styles.QueryBoxFocused
 	}
-	b.WriteString(queryBoxStyle.Render(m.textarea.View()))
+	b.WriteString(queryBoxStyle.Render(m.renderHighlightedQuery()))
 	b.WriteString("\n\n")
 
 	// Results table area - build content then pad to fill space

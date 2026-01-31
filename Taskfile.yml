@@ -1,0 +1,62 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Run tests and linting (same as CI)
+    cmds:
+      - task: test
+      - task: lint
+
+  test:
+    desc: Run tests with race detection and coverage
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+
+  test:short:
+    desc: Run tests without race detection (faster)
+    cmds:
+      - go test -v ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run --timeout=5m
+
+  lint:fix:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run --fix --timeout=5m
+
+  build:
+    desc: Build the application
+    cmds:
+      - go build -v ./...
+
+  install:
+    desc: Install the application
+    cmds:
+      - go install ./...
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f coverage.out
+      - go clean
+
+  deps:
+    desc: Download dependencies
+    cmds:
+      - go mod download
+
+  tidy:
+    desc: Tidy go.mod
+    cmds:
+      - go mod tidy
+
+  ci:
+    desc: Run full CI pipeline locally
+    cmds:
+      - task: deps
+      - task: build
+      - task: test
+      - task: lint

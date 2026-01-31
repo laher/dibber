@@ -44,7 +44,8 @@ type Model struct {
 	connectionPicker *ConnectionPicker // for interactive connection switching
 
 	// Theming
-	theme Theme // current theme
+	theme       Theme           // current theme
+	highlighter *SQLHighlighter // SQL syntax highlighter
 }
 
 // NewModel creates a new Model
@@ -72,6 +73,7 @@ func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string, vm *
 		vaultManager:     vm,
 		connectionName:   connectionName,
 		theme:            theme,
+		highlighter:      NewSQLHighlighter(theme),
 	}
 }
 
@@ -432,6 +434,7 @@ func (m *Model) switchConnection(name string) error {
 	m.dbType = dbType
 	m.connectionName = name
 	m.theme = GetTheme(themeName)
+	m.highlighter = NewSQLHighlighter(m.theme)
 
 	// Clear previous results
 	m.result = nil

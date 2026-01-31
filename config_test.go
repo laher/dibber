@@ -20,11 +20,11 @@ func setupTestConfig(t *testing.T) (string, func()) {
 	}
 
 	// Set HOME to temp directory
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	cleanup := func() {
-		os.Setenv("HOME", origHome)
-		os.RemoveAll(tmpDir)
+		_ = os.Setenv("HOME", origHome)
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return tmpDir, cleanup

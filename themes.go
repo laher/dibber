@@ -30,6 +30,9 @@ type Theme struct {
 	SyntaxNull     lipgloss.Color // NULL values
 	SyntaxBoolean  lipgloss.Color // boolean values
 	SyntaxDatetime lipgloss.Color // datetime values
+	SyntaxFunction lipgloss.Color // function names (COUNT, SUM, etc)
+	SyntaxComment  lipgloss.Color // SQL comments
+	SyntaxOperator lipgloss.Color // operators (=, <>, +, etc)
 }
 
 // Available themes
@@ -51,6 +54,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#C678DD"),
 		SyntaxBoolean:  lipgloss.Color("#56B6C2"),
 		SyntaxDatetime: lipgloss.Color("#E5C07B"),
+		SyntaxFunction: lipgloss.Color("#61AFEF"),
+		SyntaxComment:  lipgloss.Color("#5C6370"),
+		SyntaxOperator: lipgloss.Color("#ABB2BF"),
 	},
 
 	"dracula": {
@@ -70,6 +76,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#6272A4"), // comment
 		SyntaxBoolean:  lipgloss.Color("#8BE9FD"), // cyan
 		SyntaxDatetime: lipgloss.Color("#FFB86C"), // orange
+		SyntaxFunction: lipgloss.Color("#50FA7B"), // green
+		SyntaxComment:  lipgloss.Color("#6272A4"), // comment
+		SyntaxOperator: lipgloss.Color("#FF79C6"), // pink
 	},
 
 	"monokai": {
@@ -89,6 +98,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#AE81FF"), // purple
 		SyntaxBoolean:  lipgloss.Color("#66D9EF"), // cyan
 		SyntaxDatetime: lipgloss.Color("#FD971F"), // orange
+		SyntaxFunction: lipgloss.Color("#66D9EF"), // cyan
+		SyntaxComment:  lipgloss.Color("#75715E"), // comment
+		SyntaxOperator: lipgloss.Color("#F92672"), // pink
 	},
 
 	"nord": {
@@ -108,6 +120,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#4C566A"), // dim
 		SyntaxBoolean:  lipgloss.Color("#88C0D0"), // cyan
 		SyntaxDatetime: lipgloss.Color("#EBCB8B"), // yellow
+		SyntaxFunction: lipgloss.Color("#88C0D0"), // frost cyan
+		SyntaxComment:  lipgloss.Color("#4C566A"), // polar night light
+		SyntaxOperator: lipgloss.Color("#81A1C1"), // frost blue
 	},
 
 	"gruvbox": {
@@ -127,6 +142,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#928374"), // gray
 		SyntaxBoolean:  lipgloss.Color("#8EC07C"), // aqua
 		SyntaxDatetime: lipgloss.Color("#FABD2F"), // yellow
+		SyntaxFunction: lipgloss.Color("#8EC07C"), // aqua
+		SyntaxComment:  lipgloss.Color("#928374"), // gray
+		SyntaxOperator: lipgloss.Color("#FE8019"), // orange
 	},
 
 	"tokyo-night": {
@@ -146,6 +164,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#565F89"), // comment
 		SyntaxBoolean:  lipgloss.Color("#7DCFFF"), // cyan
 		SyntaxDatetime: lipgloss.Color("#E0AF68"), // yellow
+		SyntaxFunction: lipgloss.Color("#7AA2F7"), // blue
+		SyntaxComment:  lipgloss.Color("#565F89"), // comment
+		SyntaxOperator: lipgloss.Color("#89DDFF"), // cyan
 	},
 
 	"catppuccin": {
@@ -165,6 +186,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#6C7086"), // overlay0
 		SyntaxBoolean:  lipgloss.Color("#89DCEB"), // sky
 		SyntaxDatetime: lipgloss.Color("#F9E2AF"), // yellow
+		SyntaxFunction: lipgloss.Color("#89B4FA"), // blue
+		SyntaxComment:  lipgloss.Color("#6C7086"), // overlay0
+		SyntaxOperator: lipgloss.Color("#89DCEB"), // sky
 	},
 
 	"solarized": {
@@ -184,6 +208,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#586E75"), // base01
 		SyntaxBoolean:  lipgloss.Color("#2AA198"), // cyan
 		SyntaxDatetime: lipgloss.Color("#B58900"), // yellow
+		SyntaxFunction: lipgloss.Color("#268BD2"), // blue
+		SyntaxComment:  lipgloss.Color("#586E75"), // base01
+		SyntaxOperator: lipgloss.Color("#839496"), // base0
 	},
 
 	// Special "warning" themes for production/sensitive environments
@@ -204,6 +231,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#AA6666"),
 		SyntaxBoolean:  lipgloss.Color("#FFCC88"),
 		SyntaxDatetime: lipgloss.Color("#FFAA66"),
+		SyntaxFunction: lipgloss.Color("#FFCC66"),
+		SyntaxComment:  lipgloss.Color("#AA6666"),
+		SyntaxOperator: lipgloss.Color("#FF8888"),
 	},
 
 	"forest": {
@@ -223,6 +253,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#5D7A5F"),
 		SyntaxBoolean:  lipgloss.Color("#80DEEA"), // cyan
 		SyntaxDatetime: lipgloss.Color("#FFD54F"), // amber
+		SyntaxFunction: lipgloss.Color("#80DEEA"), // cyan
+		SyntaxComment:  lipgloss.Color("#5D7A5F"),
+		SyntaxOperator: lipgloss.Color("#A5D6A7"),
 	},
 
 	"ocean": {
@@ -242,6 +275,9 @@ var Themes = map[string]Theme{
 		SyntaxNull:     lipgloss.Color("#4A6572"),
 		SyntaxBoolean:  lipgloss.Color("#84FFFF"), // cyan
 		SyntaxDatetime: lipgloss.Color("#FFE082"), // amber light
+		SyntaxFunction: lipgloss.Color("#84FFFF"), // cyan
+		SyntaxComment:  lipgloss.Color("#4A6572"),
+		SyntaxOperator: lipgloss.Color("#82B1FF"), // blue
 	},
 }
 

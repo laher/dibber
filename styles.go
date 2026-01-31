@@ -183,10 +183,6 @@ var (
 				Foreground(lipgloss.Color("#FF6B6B")).
 				Bold(true)
 
-	editableBadgeStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#73F59F")).
-				Bold(true)
-
 	// NULL value styles
 	nullValueStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#C678DD")). // magenta/purple
