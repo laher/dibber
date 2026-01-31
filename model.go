@@ -256,10 +256,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.ready = true
 
 		// Adjust textarea width
 		m.textarea.SetWidth(msg.Width - 4)
+
+		// On first window size, set textarea to 50% of height
+		if !m.ready {
+			// Calculate 50% of available height (minus chrome)
+			// Chrome: title (2 lines) + status bar (1) + help (1) + borders (~4)
+			chromeHeight := 8
+			availableHeight := msg.Height - chromeHeight
+			targetHeight := availableHeight / 2
+			if targetHeight < 5 {
+				targetHeight = 5
+			}
+			if targetHeight > 30 {
+				targetHeight = 30 // reasonable max
+			}
+			m.textarea.SetHeight(targetHeight)
+		}
+
+		m.ready = true
 
 		// Initialize viewport
 		headerHeight := 5 // title + query box + status

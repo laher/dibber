@@ -115,8 +115,15 @@ func (m *Model) appendQueryToTextarea(sql string) {
 	}
 
 	m.textarea.SetValue(newContent)
-	// Move cursor to end
+
+	// Navigate to the last line, then to the end of that line
+	// This ensures the textarea scrolls to show the new content
+	totalLines := m.textarea.LineCount()
+	for i := 0; i < totalLines; i++ {
+		m.textarea.CursorDown()
+	}
 	m.textarea.CursorEnd()
+
 	// Save to file
 	m.saveToFile()
 }
