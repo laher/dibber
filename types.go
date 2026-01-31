@@ -98,13 +98,37 @@ func (ct ColumnType) IsText() bool {
 	return ct == ColTypeText || ct == ColTypeDatetime || ct == ColTypeUnknown
 }
 
-// ConnectionPicker holds the state for the connection picker dialog
+// ConnectionPickerMode represents the current mode of the connection picker
+type ConnectionPickerMode int
+
+const (
+	PickerModeList ConnectionPickerMode = iota
+	PickerModeUnlock
+	PickerModeAddName
+	PickerModeAddDSN
+	PickerModeAddType
+	PickerModeAddTheme
+	PickerModeConfirmDelete
+	PickerModeCreateVault
+	PickerModeConfirmVaultPassword
+)
+
+// ConnectionPicker holds the state for the connection picker/manager dialog
 type ConnectionPicker struct {
-	connections   []string
-	selectedIdx   int
-	scrollOffset  int
-	passwordInput string
-	showPassword  bool
-	awaitPassword bool // true when waiting for password input
-	errorMessage  string
+	mode         ConnectionPickerMode
+	connections  []string
+	selectedIdx  int
+	scrollOffset int
+	errorMessage string
+
+	// Password/unlock input
+	passwordInput        string
+	confirmPasswordInput string
+
+	// New connection input
+	newConnName  string
+	newConnDSN   string
+	newConnType  string
+	newConnTheme string
+	themeIdx     int // for theme selection
 }

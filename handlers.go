@@ -233,70 +233,142 @@ func (m Model) handleResultsNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleConnectionPickerKeys handles key events in the connection picker
+// handleConnectionPickerKeys handles key events in the connection picker/manager
 func (m Model) handleConnectionPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.connectionPicker == nil {
 		return m, nil
 	}
 
-	// Handle password input mode
-	if m.connectionPicker.awaitPassword {
-		switch msg.String() {
-		case "esc":
-			m.focus = focusQuery
-			m.connectionPicker = nil
-			m.statusMessage = "Connection switch cancelled"
-			m.textarea.Focus()
-			return m, nil
-
-		case "enter":
-			// Try to unlock with the entered password
-			password := m.connectionPicker.passwordInput
-			if password == "" {
-				m.connectionPicker.errorMessage = "Password required"
-				return m, nil
-			}
-
-			if err := m.vaultManager.Unlock(password); err != nil {
-				if errors.Is(err, ErrDecryptionFailed) {
-					m.connectionPicker.errorMessage = "Incorrect password"
-				} else {
-					m.connectionPicker.errorMessage = err.Error()
-				}
-				m.connectionPicker.passwordInput = ""
-				return m, nil
-			}
-
-			// Password correct, move to connection selection
-			m.connectionPicker.awaitPassword = false
-			m.connectionPicker.errorMessage = ""
-			m.connectionPicker.passwordInput = ""
-			return m, nil
-
-		case "backspace":
-			if len(m.connectionPicker.passwordInput) > 0 {
-				m.connectionPicker.passwordInput = m.connectionPicker.passwordInput[:len(m.connectionPicker.passwordInput)-1]
-			}
-			return m, nil
-
-		default:
-			// Add character to password (only printable chars)
-			if len(msg.String()) == 1 {
-				m.connectionPicker.passwordInput += msg.String()
-			}
-			return m, nil
-		}
+	switch m.connectionPicker.mode {
+	case PickerModeCreateVault:
+		return m.handleCreateVaultMode(msg)
+	case PickerModeConfirmVaultPassword:
+		return m.handleConfirmVaultPasswordMode(msg)
+	case PickerModeUnlock:
+		return m.handleUnlockMode(msg)
+	case PickerModeList:
+		return m.handleListMode(msg)
+	case PickerModeAddName:
+		return m.handleAddNameMode(msg)
+	case PickerModeAddDSN:
+		return m.handleAddDSNMode(msg)
+	case PickerModeAddType:
+		return m.handleAddTypeMode(msg)
+	case PickerModeAddTheme:
+		return m.handleAddThemeMode(msg)
+	case PickerModeConfirmDelete:
+		return m.handleConfirmDeleteMode(msg)
 	}
+	return m, nil
+}
 
-	// Connection selection mode
+// handleCreateVaultMode handles creating a new vault (first-time setup)
+func (m Model) handleCreateVaultMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.focus = focusQuery
-		m.connectionPicker = nil
-		m.statusMessage = "Connection switch cancelled"
-		m.textarea.Focus()
+		return m.closeConnectionPicker("Cancelled")
+	case "enter":
+		if len(m.connectionPicker.passwordInput) < 8 {
+			m.connectionPicker.errorMessage = "Password must be at least 8 characters"
+			return m, nil
+		}
+		m.connectionPicker.mode = PickerModeConfirmVaultPassword
+		m.connectionPicker.errorMessage = ""
 		return m, nil
+	case "backspace":
+		if len(m.connectionPicker.passwordInput) > 0 {
+			m.connectionPicker.passwordInput = m.connectionPicker.passwordInput[:len(m.connectionPicker.passwordInput)-1]
+		}
+		return m, nil
+	default:
+		if len(msg.String()) == 1 {
+			m.connectionPicker.passwordInput += msg.String()
+		}
+		return m, nil
+	}
+}
 
+// handleConfirmVaultPasswordMode handles confirming the vault password
+func (m Model) handleConfirmVaultPasswordMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.connectionPicker.mode = PickerModeCreateVault
+		m.connectionPicker.confirmPasswordInput = ""
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "enter":
+		if m.connectionPicker.confirmPasswordInput != m.connectionPicker.passwordInput {
+			m.connectionPicker.errorMessage = "Passwords do not match"
+			m.connectionPicker.confirmPasswordInput = ""
+			return m, nil
+		}
+		// Create the vault
+		if err := m.vaultManager.InitializeWithPassword(m.connectionPicker.passwordInput); err != nil {
+			m.connectionPicker.errorMessage = "Failed to create vault: " + err.Error()
+			return m, nil
+		}
+		// Move to add first connection
+		m.connectionPicker.mode = PickerModeAddName
+		m.connectionPicker.passwordInput = ""
+		m.connectionPicker.confirmPasswordInput = ""
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "backspace":
+		if len(m.connectionPicker.confirmPasswordInput) > 0 {
+			m.connectionPicker.confirmPasswordInput = m.connectionPicker.confirmPasswordInput[:len(m.connectionPicker.confirmPasswordInput)-1]
+		}
+		return m, nil
+	default:
+		if len(msg.String()) == 1 {
+			m.connectionPicker.confirmPasswordInput += msg.String()
+		}
+		return m, nil
+	}
+}
+
+// handleUnlockMode handles unlocking an existing vault
+func (m Model) handleUnlockMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m.closeConnectionPicker("Cancelled")
+	case "enter":
+		if m.connectionPicker.passwordInput == "" {
+			m.connectionPicker.errorMessage = "Password required"
+			return m, nil
+		}
+		if err := m.vaultManager.Unlock(m.connectionPicker.passwordInput); err != nil {
+			if errors.Is(err, ErrDecryptionFailed) {
+				m.connectionPicker.errorMessage = "Incorrect password"
+			} else {
+				m.connectionPicker.errorMessage = err.Error()
+			}
+			m.connectionPicker.passwordInput = ""
+			return m, nil
+		}
+		// Unlocked - refresh connections and go to list
+		m.connectionPicker.connections = m.vaultManager.ListConnections()
+		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.passwordInput = ""
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "backspace":
+		if len(m.connectionPicker.passwordInput) > 0 {
+			m.connectionPicker.passwordInput = m.connectionPicker.passwordInput[:len(m.connectionPicker.passwordInput)-1]
+		}
+		return m, nil
+	default:
+		if len(msg.String()) == 1 {
+			m.connectionPicker.passwordInput += msg.String()
+		}
+		return m, nil
+	}
+}
+
+// handleListMode handles the connection list view
+func (m Model) handleListMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m.closeConnectionPicker("Closed")
 	case "enter":
 		// Switch to selected connection
 		if len(m.connectionPicker.connections) > 0 {
@@ -311,7 +383,23 @@ func (m Model) handleConnectionPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textarea.Focus()
 		}
 		return m, nil
-
+	case "a", "n":
+		// Add new connection
+		m.connectionPicker.mode = PickerModeAddName
+		m.connectionPicker.newConnName = ""
+		m.connectionPicker.newConnDSN = ""
+		m.connectionPicker.newConnType = ""
+		m.connectionPicker.newConnTheme = ""
+		m.connectionPicker.themeIdx = 0
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "d", "x":
+		// Delete selected connection
+		if len(m.connectionPicker.connections) > 0 {
+			m.connectionPicker.mode = PickerModeConfirmDelete
+			m.connectionPicker.errorMessage = ""
+		}
+		return m, nil
 	case "up", "k":
 		if m.connectionPicker.selectedIdx > 0 {
 			m.connectionPicker.selectedIdx--
@@ -320,7 +408,6 @@ func (m Model) handleConnectionPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-
 	case "down", "j":
 		if m.connectionPicker.selectedIdx < len(m.connectionPicker.connections)-1 {
 			m.connectionPicker.selectedIdx++
@@ -330,8 +417,207 @@ func (m Model) handleConnectionPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	}
+	return m, nil
+}
 
+// handleAddNameMode handles entering the connection name
+func (m Model) handleAddNameMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "enter":
+		name := strings.TrimSpace(m.connectionPicker.newConnName)
+		if name == "" {
+			m.connectionPicker.errorMessage = "Name is required"
+			return m, nil
+		}
+		// Check for duplicate
+		for _, existing := range m.connectionPicker.connections {
+			if existing == name {
+				m.connectionPicker.errorMessage = "Connection '" + name + "' already exists"
+				return m, nil
+			}
+		}
+		m.connectionPicker.newConnName = name
+		m.connectionPicker.mode = PickerModeAddDSN
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "backspace":
+		if len(m.connectionPicker.newConnName) > 0 {
+			m.connectionPicker.newConnName = m.connectionPicker.newConnName[:len(m.connectionPicker.newConnName)-1]
+		}
+		return m, nil
 	default:
+		if len(msg.String()) == 1 {
+			m.connectionPicker.newConnName += msg.String()
+		}
 		return m, nil
 	}
+}
+
+// handleAddDSNMode handles entering the DSN (masked)
+func (m Model) handleAddDSNMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.connectionPicker.mode = PickerModeAddName
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "enter":
+		dsn := strings.TrimSpace(m.connectionPicker.newConnDSN)
+		if dsn == "" {
+			m.connectionPicker.errorMessage = "DSN is required"
+			return m, nil
+		}
+		m.connectionPicker.newConnDSN = dsn
+		// Auto-detect type
+		m.connectionPicker.newConnType = detectDBType(dsn)
+		m.connectionPicker.mode = PickerModeAddType
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "backspace":
+		if len(m.connectionPicker.newConnDSN) > 0 {
+			m.connectionPicker.newConnDSN = m.connectionPicker.newConnDSN[:len(m.connectionPicker.newConnDSN)-1]
+		}
+		return m, nil
+	default:
+		if len(msg.String()) == 1 {
+			m.connectionPicker.newConnDSN += msg.String()
+		}
+		return m, nil
+	}
+}
+
+// handleAddTypeMode handles selecting the database type
+func (m Model) handleAddTypeMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	types := []string{"mysql", "postgres", "sqlite"}
+	currentIdx := 0
+	for i, t := range types {
+		if t == m.connectionPicker.newConnType {
+			currentIdx = i
+			break
+		}
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.connectionPicker.mode = PickerModeAddDSN
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "enter":
+		m.connectionPicker.mode = PickerModeAddTheme
+		m.connectionPicker.themeIdx = 0
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "left", "h":
+		if currentIdx > 0 {
+			m.connectionPicker.newConnType = types[currentIdx-1]
+		}
+		return m, nil
+	case "right", "l":
+		if currentIdx < len(types)-1 {
+			m.connectionPicker.newConnType = types[currentIdx+1]
+		}
+		return m, nil
+	case "tab":
+		m.connectionPicker.newConnType = types[(currentIdx+1)%len(types)]
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleAddThemeMode handles selecting the theme
+func (m Model) handleAddThemeMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	themes := ThemeNames()
+
+	switch msg.String() {
+	case "esc":
+		m.connectionPicker.mode = PickerModeAddType
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "enter":
+		// Save the connection
+		theme := themes[m.connectionPicker.themeIdx]
+		if theme == "default" {
+			theme = ""
+		}
+		err := m.vaultManager.AddConnection(
+			m.connectionPicker.newConnName,
+			m.connectionPicker.newConnDSN,
+			m.connectionPicker.newConnType,
+			theme,
+		)
+		if err != nil {
+			m.connectionPicker.errorMessage = "Failed to save: " + err.Error()
+			return m, nil
+		}
+		// Refresh and go back to list
+		m.connectionPicker.connections = m.vaultManager.ListConnections()
+		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.errorMessage = ""
+		m.connectionPicker.newConnName = ""
+		m.connectionPicker.newConnDSN = ""
+		// Select the new connection
+		for i, name := range m.connectionPicker.connections {
+			if name == m.connectionPicker.newConnName {
+				m.connectionPicker.selectedIdx = i
+				break
+			}
+		}
+		return m, nil
+	case "up", "k":
+		if m.connectionPicker.themeIdx > 0 {
+			m.connectionPicker.themeIdx--
+		}
+		return m, nil
+	case "down", "j":
+		if m.connectionPicker.themeIdx < len(themes)-1 {
+			m.connectionPicker.themeIdx++
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleConfirmDeleteMode handles confirming connection deletion
+func (m Model) handleConfirmDeleteMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "y":
+		if len(m.connectionPicker.connections) == 0 {
+			return m, nil
+		}
+		name := m.connectionPicker.connections[m.connectionPicker.selectedIdx]
+		if err := m.vaultManager.RemoveConnection(name); err != nil {
+			m.connectionPicker.errorMessage = "Failed to delete: " + err.Error()
+			m.connectionPicker.mode = PickerModeList
+			return m, nil
+		}
+		// Refresh list
+		m.connectionPicker.connections = m.vaultManager.ListConnections()
+		if m.connectionPicker.selectedIdx >= len(m.connectionPicker.connections) {
+			m.connectionPicker.selectedIdx = len(m.connectionPicker.connections) - 1
+			if m.connectionPicker.selectedIdx < 0 {
+				m.connectionPicker.selectedIdx = 0
+			}
+		}
+		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+// closeConnectionPicker closes the picker and returns to query view
+func (m Model) closeConnectionPicker(message string) (tea.Model, tea.Cmd) {
+	m.focus = focusQuery
+	m.connectionPicker = nil
+	m.statusMessage = message
+	m.textarea.Focus()
+	return m, nil
 }

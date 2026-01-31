@@ -342,36 +342,35 @@ func (m *Model) openDetailView() {
 	m.focus = focusDetail
 }
 
-// openConnectionPicker opens the connection picker dialog
+// openConnectionPicker opens the connection picker/manager dialog
 func (m *Model) openConnectionPicker() {
 	if m.vaultManager == nil {
-		m.statusMessage = "No vault configured"
-		return
+		m.vaultManager = NewVaultManager()
 	}
 
-	// Check if vault has any connections
+	// Load config
 	if err := m.vaultManager.LoadConfig(); err != nil {
-		m.statusMessage = "Failed to load config"
-		return
-	}
-
-	if !m.vaultManager.HasVault() {
-		m.statusMessage = "No saved connections - add with -add-conn"
-		return
-	}
-
-	connections := m.vaultManager.ListConnections()
-	if len(connections) == 0 {
-		m.statusMessage = "No saved connections"
+		m.statusMessage = "Failed to load config: " + err.Error()
 		return
 	}
 
 	m.connectionPicker = &ConnectionPicker{
-		connections:   connections,
-		selectedIdx:   0,
-		scrollOffset:  0,
-		awaitPassword: !m.vaultManager.IsUnlocked(),
+		selectedIdx:  0,
+		scrollOffset: 0,
 	}
+
+	if !m.vaultManager.HasVault() {
+		// No vault exists - prompt to create one
+		m.connectionPicker.mode = PickerModeCreateVault
+	} else if !m.vaultManager.IsUnlocked() {
+		// Vault exists but is locked
+		m.connectionPicker.mode = PickerModeUnlock
+	} else {
+		// Vault is unlocked - show connections
+		m.connectionPicker.connections = m.vaultManager.ListConnections()
+		m.connectionPicker.mode = PickerModeList
+	}
+
 	m.focus = focusConnectionPicker
 }
 

@@ -135,66 +135,189 @@ func (m Model) View() string {
 	return b.String()
 }
 
-// renderConnectionPicker renders the connection picker dialog
+// renderConnectionPicker renders the connection picker/manager dialog
 func (m Model) renderConnectionPicker() string {
 	styles := m.GetStyles()
 	var b strings.Builder
 
-	b.WriteString(styles.Title.Render("🔌  Switch Connection"))
-	b.WriteString("\n\n")
-
-	if m.connectionPicker.awaitPassword {
-		// Password prompt mode
-		b.WriteString("Enter master password to unlock saved connections:\n\n")
-
-		// Show masked password
+	switch m.connectionPicker.mode {
+	case PickerModeCreateVault:
+		b.WriteString(styles.Title.Render("🔐  Create Connection Vault"))
+		b.WriteString("\n\n")
+		b.WriteString("No saved connections found. Create a master password to\n")
+		b.WriteString("securely store your database connections.\n\n")
+		b.WriteString("  Master Password (min 8 chars):\n")
 		masked := strings.Repeat("•", len(m.connectionPicker.passwordInput))
-		b.WriteString(fmt.Sprintf("  Password: %s█\n", masked))
-
-		if m.connectionPicker.errorMessage != "" {
-			b.WriteString("\n")
-			b.WriteString(styles.Error.Render("  " + m.connectionPicker.errorMessage))
-			b.WriteString("\n")
-		}
-
+		b.WriteString(fmt.Sprintf("  %s█\n", masked))
+		m.renderPickerError(&b, styles)
 		b.WriteString("\n")
-		b.WriteString(styles.Help.Render("Enter: Submit | Esc: Cancel"))
-	} else {
-		// Connection selection mode
-		b.WriteString("Select a connection:\n\n")
+		b.WriteString(styles.Help.Render("Enter: Continue | Esc: Cancel"))
 
-		visibleCount := 10
-		start := m.connectionPicker.scrollOffset
-		end := start + visibleCount
-		if end > len(m.connectionPicker.connections) {
-			end = len(m.connectionPicker.connections)
-		}
+	case PickerModeConfirmVaultPassword:
+		b.WriteString(styles.Title.Render("🔐  Confirm Master Password"))
+		b.WriteString("\n\n")
+		b.WriteString("  Confirm Password:\n")
+		masked := strings.Repeat("•", len(m.connectionPicker.confirmPasswordInput))
+		b.WriteString(fmt.Sprintf("  %s█\n", masked))
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("Enter: Create Vault | Esc: Back"))
 
-		for i := start; i < end; i++ {
-			name := m.connectionPicker.connections[i]
-			if i == m.connectionPicker.selectedIdx {
-				// Highlight selected
-				b.WriteString(fmt.Sprintf("  ▶ %s", styles.SelectedRow.Render(name)))
-			} else {
-				b.WriteString(fmt.Sprintf("    %s", name))
+	case PickerModeUnlock:
+		b.WriteString(styles.Title.Render("🔐  Unlock Connection Vault"))
+		b.WriteString("\n\n")
+		b.WriteString("  Master Password:\n")
+		masked := strings.Repeat("•", len(m.connectionPicker.passwordInput))
+		b.WriteString(fmt.Sprintf("  %s█\n", masked))
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("Enter: Unlock | Esc: Cancel"))
+
+	case PickerModeList:
+		b.WriteString(styles.Title.Render("🔌  Connection Manager"))
+		b.WriteString("\n\n")
+
+		if len(m.connectionPicker.connections) == 0 {
+			b.WriteString("  No saved connections.\n")
+			b.WriteString("  Press 'a' to add your first connection.\n")
+		} else {
+			visibleCount := 10
+			start := m.connectionPicker.scrollOffset
+			end := start + visibleCount
+			if end > len(m.connectionPicker.connections) {
+				end = len(m.connectionPicker.connections)
 			}
-			b.WriteString("\n")
+
+			for i := start; i < end; i++ {
+				name := m.connectionPicker.connections[i]
+				if i == m.connectionPicker.selectedIdx {
+					b.WriteString(fmt.Sprintf("  ▶ %s", styles.SelectedRow.Render(name)))
+				} else {
+					b.WriteString(fmt.Sprintf("    %s", name))
+				}
+				b.WriteString("\n")
+			}
 		}
 
-		if m.connectionPicker.errorMessage != "" {
-			b.WriteString("\n")
-			b.WriteString(styles.Error.Render("  " + m.connectionPicker.errorMessage))
-			b.WriteString("\n")
-		}
+		m.renderPickerError(&b, styles)
 
-		// Show current connection if any
 		if m.connectionName != "" {
 			b.WriteString(fmt.Sprintf("\n  Current: %s", m.connectionName))
 		}
 
 		b.WriteString("\n\n")
-		b.WriteString(styles.Help.Render("↑↓: Navigate | Enter: Connect | Esc: Cancel"))
+		if len(m.connectionPicker.connections) > 0 {
+			b.WriteString(styles.Help.Render("↑↓: Navigate | Enter: Connect | a: Add | d: Delete | Esc: Close"))
+		} else {
+			b.WriteString(styles.Help.Render("a: Add Connection | Esc: Close"))
+		}
+
+	case PickerModeAddName:
+		b.WriteString(styles.Title.Render("➕  Add Connection - Name"))
+		b.WriteString("\n\n")
+		b.WriteString("  Enter a name for this connection:\n")
+		b.WriteString(fmt.Sprintf("  %s█\n", m.connectionPicker.newConnName))
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("Enter: Continue | Esc: Cancel"))
+
+	case PickerModeAddDSN:
+		b.WriteString(styles.Title.Render("➕  Add Connection - DSN"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("  Connection: %s\n\n", m.connectionPicker.newConnName))
+		b.WriteString("  Enter the database connection string (DSN):\n")
+		// Show DSN masked for security
+		masked := strings.Repeat("•", len(m.connectionPicker.newConnDSN))
+		b.WriteString(fmt.Sprintf("  %s█\n", masked))
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("  Examples:"))
+		b.WriteString("\n")
+		b.WriteString("    MySQL:    user:pass@tcp(localhost:3306)/dbname\n")
+		b.WriteString("    Postgres: postgres://user:pass@localhost/dbname\n")
+		b.WriteString("    SQLite:   /path/to/database.db\n")
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("Enter: Continue | Esc: Back"))
+
+	case PickerModeAddType:
+		b.WriteString(styles.Title.Render("➕  Add Connection - Database Type"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("  Connection: %s\n\n", m.connectionPicker.newConnName))
+		b.WriteString("  Select database type:\n\n")
+
+		types := []string{"mysql", "postgres", "sqlite"}
+		for _, t := range types {
+			if t == m.connectionPicker.newConnType {
+				b.WriteString(fmt.Sprintf("  ▶ %s\n", styles.SelectedRow.Render(t)))
+			} else {
+				b.WriteString(fmt.Sprintf("    %s\n", t))
+			}
+		}
+
+		if m.connectionPicker.newConnType != "" {
+			detected := detectDBType(m.connectionPicker.newConnDSN)
+			if detected != "" {
+				b.WriteString(fmt.Sprintf("\n  (Auto-detected: %s)", detected))
+			}
+		}
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n\n")
+		b.WriteString(styles.Help.Render("←→/Tab: Select | Enter: Continue | Esc: Back"))
+
+	case PickerModeAddTheme:
+		b.WriteString(styles.Title.Render("➕  Add Connection - Theme"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("  Connection: %s (%s)\n\n", m.connectionPicker.newConnName, m.connectionPicker.newConnType))
+		b.WriteString("  Select a visual theme:\n\n")
+
+		themes := ThemeNames()
+		visibleCount := 8
+		start := 0
+		if m.connectionPicker.themeIdx >= visibleCount {
+			start = m.connectionPicker.themeIdx - visibleCount + 1
+		}
+		end := start + visibleCount
+		if end > len(themes) {
+			end = len(themes)
+		}
+
+		for i := start; i < end; i++ {
+			themeName := themes[i]
+			theme := Themes[themeName]
+			desc := theme.Description
+			if i == m.connectionPicker.themeIdx {
+				b.WriteString(fmt.Sprintf("  ▶ %s", styles.SelectedRow.Render(fmt.Sprintf("%-14s %s", themeName, desc))))
+			} else {
+				b.WriteString(fmt.Sprintf("    %-14s %s", themeName, desc))
+			}
+			b.WriteString("\n")
+		}
+
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("↑↓: Select | Enter: Save Connection | Esc: Back"))
+
+	case PickerModeConfirmDelete:
+		b.WriteString(styles.Title.Render("🗑️  Delete Connection"))
+		b.WriteString("\n\n")
+		if len(m.connectionPicker.connections) > 0 {
+			name := m.connectionPicker.connections[m.connectionPicker.selectedIdx]
+			b.WriteString(fmt.Sprintf("  Delete connection '%s'?\n\n", styles.Error.Render(name)))
+			b.WriteString("  This cannot be undone.\n")
+		}
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n\n")
+		b.WriteString(styles.Help.Render("y: Yes, Delete | n/Esc: Cancel"))
 	}
 
 	return b.String()
+}
+
+// renderPickerError renders the error message if present
+func (m Model) renderPickerError(b *strings.Builder, styles ThemedStyles) {
+	if m.connectionPicker.errorMessage != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.Error.Render("  " + m.connectionPicker.errorMessage))
+		b.WriteString("\n")
+	}
 }

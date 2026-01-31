@@ -134,7 +134,25 @@ dibber -dsn ':memory:'  # In-memory database
 
 Dibber can store database connections for reuse. Connections are encrypted and stored in `~/.dibber.yaml`.
 
-### Adding a Connection
+### Adding Connections via the UI (Recommended)
+
+The most secure way to add connections is through the UI, as the DSN is never visible in shell history or process lists:
+
+1. Start dibber with any connection (or even a SQLite memory database): `dibber -dsn ':memory:'`
+2. Press **Ctrl+P** to open the Connection Manager
+3. If this is your first time, you'll be prompted to create a master password
+4. Press **a** to add a new connection
+5. Enter a name for the connection (e.g., "prod", "dev", "staging")
+6. Enter the DSN (displayed as dots for security)
+7. Select the database type (auto-detected if possible)
+8. Choose a theme (optional, but useful for distinguishing environments)
+9. Press Enter to save
+
+Your connection is now encrypted and stored securely.
+
+### Adding Connections via Command Line
+
+You can also add connections from the command line, though this is less secure as the DSN appears in shell history:
 
 ```bash
 # Add a connection with a name
@@ -163,6 +181,13 @@ You'll be prompted for your master password to unlock the connection vault.
 
 ### Managing Connections
 
+**Via UI (Ctrl+P):**
+- Press **a** to add a new connection
+- Press **d** to delete the selected connection
+- Use **↑↓** to navigate, **Enter** to connect
+
+**Via Command Line:**
+
 ```bash
 # List all saved connections
 dibber -list-conns
@@ -174,9 +199,19 @@ dibber -remove-conn mydb
 dibber -change-password
 ```
 
-### Switching Connections at Runtime
+### Connection Manager (Ctrl+P)
 
-Press **Ctrl+P** while running dibber to open the connection picker. If your vault is locked, you'll be prompted for your master password. Select a connection and press Enter to switch.
+Press **Ctrl+P** at any time to open the Connection Manager. This provides a complete interface for managing your saved connections:
+
+| Key | Action |
+|-----|--------|
+| `↑↓` | Navigate connections |
+| `Enter` | Connect to selected |
+| `a` or `n` | Add new connection |
+| `d` or `x` | Delete selected connection |
+| `Esc` | Close manager |
+
+If the vault is locked, you'll be prompted for your master password first. If no vault exists, you'll be guided through creating one.
 
 ### Security & Encryption
 
@@ -211,10 +246,12 @@ Saved connections are protected with industry-standard encryption:
 - File permissions are set to `0600` (owner read/write only)
 - The data key is held in memory only while the vault is unlocked
 - Changing your password re-encrypts the data key (DSNs don't need re-encryption)
+- **UI-based entry (Ctrl+P) keeps DSNs out of shell history and process lists**
 
 **What's NOT protected:**
 
 - Connection names and themes are stored in plaintext (only DSNs are encrypted)
+- Command-line DSN entry (`-add-conn -dsn '...'`) appears in shell history
 - Memory is not securely wiped (Go doesn't guarantee secure memory erasure)
 - No protection against keyloggers or malware with memory access
 
