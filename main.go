@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"database/sql"
 	"errors"
 	"flag"
@@ -437,17 +436,6 @@ func promptNewPassword() (string, error) {
 	}
 
 	return string(password1), nil
-}
-
-// promptLine prompts for a single line of input
-func promptLine(prompt string) (string, error) {
-	fmt.Print(prompt)
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(line), nil
 }
 
 // detectDBType attempts to determine the database type from the DSN
