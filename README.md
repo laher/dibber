@@ -436,7 +436,7 @@ It's also a somewhat childish soundalike for "d-b" (database).
 
 ## TODOs
 
-- Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it
+- Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it (and therefore, no need for entering encryption password)
 - Tabs for multiple connections
 - Refine the concept of 'modal editor' - Esc to go to results view, providing
  more key mappings.
