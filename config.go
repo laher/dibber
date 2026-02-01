@@ -176,7 +176,7 @@ func (vm *VaultManager) IsUnlocked() bool {
 	return vm.vault.IsUnlocked()
 }
 
-// Unlock unlocks the vault with the master password
+// Unlock unlocks the vault with the encryption password
 func (vm *VaultManager) Unlock(password string) error {
 	if vm.config == nil {
 		return ErrVaultNotConfigured
@@ -307,7 +307,7 @@ func (vm *VaultManager) ListConnections() []string {
 	return vm.config.ConnectionNames()
 }
 
-// ChangePassword changes the master password (re-encrypts data key)
+// ChangePassword changes the encryption password (re-encrypts data key)
 func (vm *VaultManager) ChangePassword(newPassword string) error {
 	if !vm.vault.IsUnlocked() {
 		return ErrVaultLocked

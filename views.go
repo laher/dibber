@@ -339,9 +339,9 @@ func (m Model) renderConnectionPicker() string {
 	case PickerModeCreateVault:
 		b.WriteString(styles.Title.Render("🔐  Create Connection Vault"))
 		b.WriteString("\n\n")
-		b.WriteString("No saved connections found. Create a master password to\n")
+		b.WriteString("No saved connections found. Create a encryption password to\n")
 		b.WriteString("securely store your database connections.\n\n")
-		b.WriteString("  Master Password (min 8 chars):\n")
+		b.WriteString("  encryption password (min 8 chars):\n")
 		masked := strings.Repeat("•", len(m.connectionPicker.passwordInput))
 		b.WriteString(fmt.Sprintf("  %s█\n", masked))
 		m.renderPickerError(&b, styles)
@@ -349,7 +349,7 @@ func (m Model) renderConnectionPicker() string {
 		b.WriteString(styles.Help.Render("Enter: Continue | Esc: Cancel"))
 
 	case PickerModeConfirmVaultPassword:
-		b.WriteString(styles.Title.Render("🔐  Confirm Master Password"))
+		b.WriteString(styles.Title.Render("🔐  Confirm encryption password"))
 		b.WriteString("\n\n")
 		b.WriteString("  Confirm Password:\n")
 		masked := strings.Repeat("•", len(m.connectionPicker.confirmPasswordInput))
@@ -361,7 +361,7 @@ func (m Model) renderConnectionPicker() string {
 	case PickerModeUnlock:
 		b.WriteString(styles.Title.Render("🔐  Unlock Connection Vault"))
 		b.WriteString("\n\n")
-		b.WriteString("  Master Password:\n")
+		b.WriteString("  encryption password:\n")
 		masked := strings.Repeat("•", len(m.connectionPicker.passwordInput))
 		b.WriteString(fmt.Sprintf("  %s█\n", masked))
 		m.renderPickerError(&b, styles)

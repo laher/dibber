@@ -28,7 +28,7 @@ func main() {
 	removeConnection := flag.String("remove-conn", "", "Remove a saved connection")
 	listConnections := flag.Bool("list-conns", false, "List all saved connections")
 	listThemes := flag.Bool("list-themes", false, "List all available themes")
-	changePassword := flag.Bool("change-password", false, "Change the master password")
+	changePassword := flag.Bool("change-password", false, "Change the encryption password")
 	themeName := flag.String("theme", "", "Theme for the connection (use with -add-conn)")
 
 	// Other flags
@@ -211,7 +211,7 @@ func resolveDSN(dsn, connectionName, dbType string) (connectionInfo, error) {
 		}
 
 		// Prompt for password to unlock
-		password, err := promptPassword("Enter master password: ")
+		password, err := promptPassword("Enter encryption password: ")
 		if err != nil {
 			return connectionInfo{}, fmt.Errorf("failed to read password: %w", err)
 		}
@@ -298,7 +298,7 @@ func handleAddConnection(name, dsn, dbType, theme string) {
 
 	if vm.HasVault() {
 		// Vault exists, unlock it
-		password, err := promptPassword("Enter master password: ")
+		password, err := promptPassword("Enter encryption password: ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to read password: %v\n", err)
 			os.Exit(1)
@@ -358,7 +358,7 @@ func handleRemoveConnection(name string) {
 		os.Exit(1)
 	}
 
-	password, err := promptPassword("Enter master password: ")
+	password, err := promptPassword("Enter encryption password: ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read password: %v\n", err)
 		os.Exit(1)
@@ -418,7 +418,7 @@ func handleSetSQLDir(dir string) {
 	fmt.Printf("SQL directory set to: %s\n", absDir)
 }
 
-// handleChangePassword changes the master password
+// handleChangePassword changes the encryption password
 func handleChangePassword() {
 	vm := NewVaultManager()
 	if err := vm.LoadConfig(); err != nil {
@@ -432,7 +432,7 @@ func handleChangePassword() {
 	}
 
 	// Unlock with current password
-	currentPassword, err := promptPassword("Enter current master password: ")
+	currentPassword, err := promptPassword("Enter current encryption password: ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read password: %v\n", err)
 		os.Exit(1)
@@ -475,7 +475,7 @@ func promptPassword(prompt string) (string, error) {
 
 // promptNewPassword prompts for a new password with confirmation
 func promptNewPassword() (string, error) {
-	fmt.Print("Enter new master password: ")
+	fmt.Print("Enter new encryption password: ")
 	password1, err := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println()
 	if err != nil {
@@ -486,7 +486,7 @@ func promptNewPassword() (string, error) {
 		return "", errors.New("password must be at least 8 characters")
 	}
 
-	fmt.Print("Confirm master password: ")
+	fmt.Print("Confirm encryption password: ")
 	password2, err := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println()
 	if err != nil {

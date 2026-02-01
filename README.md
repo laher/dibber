@@ -105,7 +105,7 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 | `-add-conn` | Add a new named connection (requires `-dsn`) |
 | `-remove-conn` | Remove a saved connection |
 | `-list-conns` | List all saved connections |
-| `-change-password` | Change the master password |
+| `-change-password` | Change the encryption password |
 | `-theme` | Theme for the connection (use with `-add-conn`) |
 | `-list-themes` | List all available themes |
 
@@ -162,7 +162,7 @@ The most secure way to add connections is through the UI, as the DSN is never vi
 
 1. Start dibber with any connection (or even a SQLite memory database): `dibber -dsn ':memory:'`
 2. Press **Ctrl+P** to open the Connection Manager
-3. If this is your first time, you'll be prompted to create a master password
+3. If this is your first time, you'll be prompted to create an encryption password
 4. Press **a** to add a new connection
 5. Enter a name for the connection (e.g., "prod", "dev", "staging")
 6. Enter the DSN (displayed as dots for security)
@@ -187,7 +187,7 @@ dibber -add-conn prod -dsn 'postgres://...' -theme production
 dibber -add-conn legacy -dsn '...' -type mysql -theme gruvbox
 ```
 
-On first use, you'll be prompted to create a master password. This password protects all your saved connections.
+On first use, you'll be prompted to create an encryption password. This password protects all your saved connections.
 
 ### Using a Saved Connection
 
@@ -199,7 +199,7 @@ dibber -conn mydb
 echo 'SELECT * FROM users' | dibber -conn mydb -format csv
 ```
 
-You'll be prompted for your master password to unlock the connection vault.
+You'll be prompted for your encryption password to unlock the connection vault.
 
 ### Managing Connections
 
@@ -218,7 +218,7 @@ dibber -list-conns
 # Remove a connection
 dibber -remove-conn mydb
 
-# Change the master password
+# Change the encryption password
 dibber -change-password
 ```
 
@@ -234,7 +234,7 @@ Press **Ctrl+P** at any time to open the Connection Manager. This provides a com
 | `d` or `x` | Delete selected connection |
 | `Esc` | Close manager |
 
-If the vault is locked, you'll be prompted for your master password first. If no vault exists, you'll be guided through creating one.
+If the vault is locked, you'll be prompted for your encryption password first. If no vault exists, you'll be guided through creating one.
 
 ### Security & Encryption
 
@@ -248,7 +248,7 @@ Saved connections are protected with industry-standard encryption:
 
 **How it works:**
 
-1. **Master Password** - You choose a master password (min 8 characters)
+1. **encryption Password** - You choose a encryption password (min 8 characters)
 2. **Key Derivation** - Argon2id derives a key from your password + random salt
    - Parameters: 64MB memory, 3 iterations, 4 threads
    - This makes brute-force attacks computationally expensive
@@ -264,7 +264,7 @@ Saved connections are protected with industry-standard encryption:
 **Security properties:**
 
 - DSNs are never stored in plaintext
-- The master password is never stored - only a derived key can decrypt the data key
+- The encryption password is never stored - only a derived key can decrypt the data key
 - Each DSN uses a unique nonce, so identical DSNs produce different ciphertext
 - File permissions are set to `0600` (owner read/write only)
 - The data key is held in memory only while the vault is unlocked
@@ -433,6 +433,21 @@ A [dibber](https://en.wikipedia.org/wiki/Dibber) is a pointed wooden stick for m
 Like its namesake, this tool helps you dig into your data and plant new rows.
 
 It's also a somewhat childish soundalike for "d-b" (database).
+
+## TODOs
+
+- Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it
+- Tabs for multiple connections
+- Refine the concept of 'modal editor' - Esc to go to results view, providing
+ more key mappings.
+- Maybe menus
+- 'rollover' sql file to back up sql file and clear it
+- Different default file per named connection? configurable (so that connections can share if needed)
+- Improve cursor - multiline selection
+- [not sure] autocompletion of SQL keywords and maybe table/column names
+- refine 'pipe mode'
+- pipe to external app for fetching encryption password? e.g. pass, op
+(1password), etc
 
 ## License
 

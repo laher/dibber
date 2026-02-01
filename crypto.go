@@ -181,7 +181,7 @@ func DecryptDSN(dataKey []byte, encryptedDSN string) (string, error) {
 	return string(plaintext), nil
 }
 
-// InitializeVault initializes a new vault with a master password
+// InitializeVault initializes a new vault with a encryption password
 // Returns the salt and encrypted data key for storage
 func InitializeVault(password string) (salt []byte, encryptedDataKey string, dataKey []byte, err error) {
 	salt, err = GenerateSalt()
@@ -203,7 +203,7 @@ func InitializeVault(password string) (salt []byte, encryptedDataKey string, dat
 	return salt, encryptedDataKey, dataKey, nil
 }
 
-// UnlockVault unlocks a vault with the master password
+// UnlockVault unlocks a vault with the encryption password
 func UnlockVault(password string, salt []byte, encryptedDataKey string) ([]byte, error) {
 	derivedKey := DeriveKey(password, salt)
 	dataKey, err := DecryptDataKey(derivedKey, encryptedDataKey)
