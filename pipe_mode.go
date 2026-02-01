@@ -19,37 +19,96 @@ func isPiped() bool {
 	return (stat.Mode() & os.ModeCharDevice) == 0
 }
 
-// runPipeMode reads a query from stdin, executes it, and outputs results to stdout
+// runPipeMode reads queries from stdin, executes them, and outputs results to stdout
 func runPipeMode(db *sql.DB, format string) {
 	// Read all of stdin
-	query, err := io.ReadAll(bufio.NewReader(os.Stdin))
+	input, err := io.ReadAll(bufio.NewReader(os.Stdin))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading from stdin: %v\n", err)
 		os.Exit(1)
 	}
 
-	queryStr := strings.TrimSpace(string(query))
-	if queryStr == "" {
+	inputStr := strings.TrimSpace(string(input))
+	if inputStr == "" {
 		fmt.Fprintln(os.Stderr, "Error: No query provided via stdin")
 		os.Exit(1)
 	}
 
-	// Remove trailing semicolon if present (some drivers don't like it)
-	queryStr = strings.TrimSuffix(queryStr, ";")
-
-	// Execute the query
-	rows, err := db.Query(queryStr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Query error: %v\n", err)
+	// Split into individual statements
+	statements := SplitStatements(inputStr)
+	if len(statements) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: No valid statements found")
 		os.Exit(1)
+	}
+
+	// Track if we've output anything (for separating multiple results)
+	firstOutput := true
+	hasError := false
+
+	for i, stmt := range statements {
+		if IsSelectStatement(stmt) {
+			// Execute as query (returns rows)
+			columns, rows, err := executeSelectStatement(db, stmt)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Statement %d error: %v\n", i+1, err)
+				hasError = true
+				continue
+			}
+
+			// Add separator between multiple result sets
+			if !firstOutput {
+				fmt.Println()
+				if format == "table" {
+					fmt.Println("---")
+					fmt.Println()
+				}
+			}
+			firstOutput = false
+
+			// Output based on format
+			switch strings.ToLower(format) {
+			case "csv":
+				outputCSV(columns, rows, ",")
+			case "tsv":
+				outputCSV(columns, rows, "\t")
+			default:
+				outputTable(columns, rows)
+			}
+		} else {
+			// Execute as statement (INSERT/UPDATE/DELETE/DDL)
+			affected, err := executeNonSelectStatement(db, stmt)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Statement %d error: %v\n", i+1, err)
+				hasError = true
+				continue
+			}
+
+			// Report affected rows to stderr (doesn't interfere with data output)
+			if affected >= 0 {
+				fmt.Fprintf(os.Stderr, "Statement %d: %d row(s) affected\n", i+1, affected)
+			} else {
+				fmt.Fprintf(os.Stderr, "Statement %d: OK\n", i+1)
+			}
+		}
+	}
+
+	if hasError {
+		os.Exit(1)
+	}
+}
+
+// executeSelectStatement executes a SELECT query and returns columns and rows
+func executeSelectStatement(db *sql.DB, stmt string) ([]string, [][]string, error) {
+	rows, err := db.Query(stmt)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
 	// Get column names
 	columns, err := rows.Columns()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting columns: %v\n", err)
-		os.Exit(1)
+		return nil, nil, fmt.Errorf("error getting columns: %w", err)
 	}
 
 	// Collect all rows
@@ -62,8 +121,7 @@ func runPipeMode(db *sql.DB, format string) {
 		}
 
 		if err := rows.Scan(valuePtrs...); err != nil {
-			fmt.Fprintf(os.Stderr, "Error scanning row: %v\n", err)
-			os.Exit(1)
+			return nil, nil, fmt.Errorf("error scanning row: %w", err)
 		}
 
 		row := make([]string, len(columns))
@@ -83,19 +141,27 @@ func runPipeMode(db *sql.DB, format string) {
 	}
 
 	if err := rows.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error iterating rows: %v\n", err)
-		os.Exit(1)
+		return nil, nil, fmt.Errorf("error iterating rows: %w", err)
 	}
 
-	// Output based on format
-	switch strings.ToLower(format) {
-	case "csv":
-		outputCSV(columns, allRows, ",")
-	case "tsv":
-		outputCSV(columns, allRows, "\t")
-	default:
-		outputTable(columns, allRows)
+	return columns, allRows, nil
+}
+
+// executeNonSelectStatement executes an INSERT/UPDATE/DELETE/DDL statement
+// Returns the number of affected rows, or -1 if not applicable
+func executeNonSelectStatement(db *sql.DB, stmt string) (int64, error) {
+	result, err := db.Exec(stmt)
+	if err != nil {
+		return 0, err
 	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		// Some statements don't support RowsAffected (e.g., DDL)
+		return -1, nil
+	}
+
+	return affected, nil
 }
 
 // outputTable outputs results in a formatted table

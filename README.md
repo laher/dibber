@@ -86,6 +86,48 @@ Pipe mode outputs results to stdout and row counts to stderr, making it easy to 
 echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 ```
 
+#### Multiple Statements
+
+Pipe mode supports multiple SQL statements separated by semicolons:
+
+```bash
+# Run multiple queries - each SELECT result is output separately
+echo 'SELECT * FROM users; SELECT * FROM orders;' | dibber -conn mydb
+
+# Mix of statements - SELECTs output data, others report affected rows
+cat <<'EOF' | dibber -conn mydb
+INSERT INTO logs (msg) VALUES ('starting');
+SELECT COUNT(*) FROM users;
+UPDATE users SET last_seen = NOW() WHERE active = 1;
+SELECT * FROM users WHERE active = 1;
+EOF
+```
+
+For non-SELECT statements (INSERT, UPDATE, DELETE, DDL), affected row counts are printed to stderr:
+
+```
+Statement 1: 1 row(s) affected
+Statement 3: 42 row(s) affected
+```
+
+**What the statement splitter handles:**
+
+- Semicolons inside single-quoted strings: `SELECT 'hello; world'`
+- Semicolons inside double-quoted identifiers: `SELECT "col;name"`
+- Escaped quotes: `SELECT 'it''s ok; really'` and `SELECT 'it\'s ok'`
+- Line comments: `SELECT 1; -- comment; here`
+- Block comments: `SELECT /* comment; */ 1`
+- Empty statements between semicolons (ignored)
+- Statements without trailing semicolon
+
+**What it does NOT handle:**
+
+- PostgreSQL dollar-quoted strings (`$$...$$`) used in function definitions
+- MySQL `DELIMITER` command used in stored procedures
+- Backtick-quoted identifiers containing semicolons (MySQL)
+
+For complex scripts with these constructs, execute statements individually or use database-specific tools.
+
 ### Options
 
 | Option | Description |
@@ -359,6 +401,30 @@ The query editor supports multiple queries separated by semicolons (`;`). When y
 | `Tab` | Switch focus to results |
 | `Ctrl+O` | Open file dialog |
 
+#### Text Selection
+
+Use shift+arrow keys to select text in the query editor:
+
+| Key | Action |
+|-----|--------|
+| `Shift+←/→` | Select character left/right |
+| `Shift+↑/↓` | Extend selection up/down |
+| `Shift+Home` | Select to start of line |
+| `Shift+End` | Select to end of line |
+
+While text is selected (selection mode):
+
+| Key | Action |
+|-----|--------|
+| `c` | Copy selection to clipboard |
+| `x` | Cut selection to clipboard |
+| `v` | Paste from clipboard (replaces selection) |
+| `Backspace/Delete` | Delete selection |
+| `Esc` | Cancel selection |
+| `←/→/↑/↓` | Exit selection mode and move cursor |
+
+**Note:** Regular typing is blocked while in selection mode. Press `Esc` or an arrow key to exit selection mode.
+
 **Multi-query example:**
 
 ```sql
@@ -449,15 +515,14 @@ It's also a somewhat childish soundalike for "d-b" (database).
 ## TODOs
 
 - [x] Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it (and therefore, no need for entering encryption password)
+- [x] Pipe mode - support multiple queries from stdin.
 - [ ] Different default file per named connection? configurable (so that connections can share if needed)
 - [ ] Tabs for multiple connections (note: should we share query window in some cases?)
 - [ ] Refine the concept of 'modal editor' - <Esc> to go to results view, providing more key mappings (without <Ctrl>) while in results view.
 - [ ] Menus
-- [ ] 'rollover' sql file to back up sql file and clear it
+- [ ] feature - 'rollover' sql file to back up sql file and clear it
 - [ ] Improve cursor - support multiline selection in editor
 - [ ] formatting, linting, error-checking SQL
-- [ ] Refine 'pipe mode'
-  - [ ] Verify that pipe mode supports multiple queries from stdin.
 - [ ] Defer to external app for encryption password? e.g. pass, op,
 (1password), etc
 - [ ] Export results to csv/table/tsv. Maybe json,yaml too?
