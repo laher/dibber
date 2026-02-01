@@ -9,11 +9,16 @@ import (
 
 // openFileDialog opens the file selection dialog
 func (m *Model) openFileDialog() {
-	// Get current directory
-	dir, err := os.Getwd()
-	if err != nil {
-		m.statusMessage = fmt.Sprintf("Error getting directory: %v", err)
-		return
+	// Use the configured SQL directory
+	dir := m.sqlDir
+	if dir == "" {
+		// Fallback to current directory if sqlDir not set
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			m.statusMessage = fmt.Sprintf("Error getting directory: %v", err)
+			return
+		}
 	}
 
 	m.loadDirectoryIntoDialog(dir)

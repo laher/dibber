@@ -148,6 +148,36 @@ func TestConfigConnectionNames(t *testing.T) {
 	}
 }
 
+func TestConfigSQLDir(t *testing.T) {
+	_, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	vm := NewVaultManager()
+	_ = vm.LoadConfig()
+
+	// Default should be $HOME/sql
+	defaultDir := vm.GetSQLDir()
+	if defaultDir == "" {
+		t.Error("GetSQLDir() should return a non-empty default")
+	}
+
+	// Set a custom directory
+	customDir := "/tmp/my-sql-scripts"
+	if err := vm.SetSQLDir(customDir); err != nil {
+		t.Fatalf("SetSQLDir failed: %v", err)
+	}
+
+	// Reload and verify
+	vm2 := NewVaultManager()
+	if err := vm2.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if vm2.GetSQLDir() != customDir {
+		t.Errorf("GetSQLDir() = %q, want %q", vm2.GetSQLDir(), customDir)
+	}
+}
+
 func TestVaultManagerIntegration(t *testing.T) {
 	_, cleanup := setupTestConfig(t)
 	defer cleanup()

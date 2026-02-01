@@ -34,6 +34,12 @@ func (m Model) renderHighlightedQuery() string {
 		lineNumWidth = 2
 	}
 
+	// Calculate content width (excluding line numbers)
+	contentWidth := width
+	if m.textarea.ShowLineNumbers {
+		contentWidth = width - lineNumWidth - 1 // -1 for space after line number
+	}
+
 	// Styles for line numbers
 	lineNumStyle := lipgloss.NewStyle().
 		Foreground(m.theme.TextDim).
@@ -68,27 +74,36 @@ func (m Model) renderHighlightedQuery() string {
 			b.WriteString(" ")
 		}
 
-		// Apply syntax highlighting to the line
+		// Apply syntax highlighting to the line and pad to full width
+		var renderedLine string
+		isCursorLine := isFocused && i == cursorLine
+		cursorAtEnd := isCursorLine && cursorCol >= len([]rune(line))
+
 		if m.highlighter != nil {
 			highlightedLine := m.highlighter.HighlightLine(line)
 
 			// If this is the cursor line and we're focused, insert cursor
-			if isFocused && i == cursorLine {
-				// We need to insert cursor into the highlighted line
-				// This is tricky because highlightedLine contains ANSI codes
-				// We need to work with the original line for cursor positioning
-				b.WriteString(m.insertCursor(line, highlightedLine, cursorCol, cursorStyle, width))
+			if isCursorLine {
+				renderedLine = m.insertCursor(line, highlightedLine, cursorCol, cursorStyle, contentWidth)
 			} else {
-				b.WriteString(m.truncateLine(highlightedLine, width))
+				renderedLine = highlightedLine
 			}
 		} else {
 			// No highlighter, render plain
-			if isFocused && i == cursorLine {
-				b.WriteString(m.insertCursorPlain(line, cursorCol, cursorStyle, width))
+			if isCursorLine {
+				renderedLine = m.insertCursorPlain(line, cursorCol, cursorStyle, contentWidth)
 			} else {
-				b.WriteString(m.truncateLine(line, width))
+				renderedLine = line
 			}
 		}
+
+		// Pad line to full width
+		// When cursor is at end of line, we've added a cursor block, so adjust width calculation
+		effectivePlainWidth := len([]rune(line))
+		if cursorAtEnd {
+			effectivePlainWidth++ // Account for cursor block
+		}
+		b.WriteString(m.padToWidthWithVisibleWidth(renderedLine, effectivePlainWidth, contentWidth))
 
 		if i < scrollOffset+height-1 {
 			b.WriteString("\n")
@@ -107,6 +122,8 @@ func (m Model) renderHighlightedQuery() string {
 		if m.textarea.ShowLineNumbers {
 			b.WriteString(strings.Repeat(" ", lineNumWidth+1))
 		}
+		// Pad empty lines to full width
+		b.WriteString(strings.Repeat(" ", contentWidth))
 		if i < height-1 {
 			b.WriteString("\n")
 		}
@@ -169,6 +186,18 @@ func (m Model) truncateLine(line string, maxWidth int) string {
 	// Truncate by visible width - this is approximate for styled text
 	// For now, just return as-is since the query box has its own width handling
 	return line
+}
+
+// padToWidthWithVisibleWidth pads a rendered line to the specified width
+// using a pre-calculated visible width
+func (m Model) padToWidthWithVisibleWidth(renderedLine string, visibleWidth, targetWidth int) string {
+	if visibleWidth >= targetWidth {
+		return renderedLine
+	}
+
+	// Add padding spaces to reach target width
+	padding := targetWidth - visibleWidth
+	return renderedLine + strings.Repeat(" ", padding)
 }
 
 // View implements tea.Model

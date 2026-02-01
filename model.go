@@ -19,6 +19,7 @@ const (
 type Model struct {
 	db               *sql.DB
 	dbType           string
+	sqlDir           string // directory for SQL files
 	sqlFile          string
 	lastSavedContent string
 	confirmingQuit   bool
@@ -49,7 +50,7 @@ type Model struct {
 }
 
 // NewModel creates a new Model
-func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string, vm *VaultManager, connectionName string, theme Theme) Model {
+func NewModel(db *sql.DB, dbType string, sqlDir string, sqlFile string, initialSQL string, vm *VaultManager, connectionName string, theme Theme) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Enter SQL query..."
 	ta.Focus()
@@ -66,6 +67,7 @@ func NewModel(db *sql.DB, dbType string, sqlFile string, initialSQL string, vm *
 	return Model{
 		db:               db,
 		dbType:           dbType,
+		sqlDir:           sqlDir,
 		sqlFile:          sqlFile,
 		lastSavedContent: initialSQL,
 		textarea:         ta,

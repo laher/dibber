@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -31,7 +32,9 @@ func main() {
 	themeName := flag.String("theme", "", "Theme for the connection (use with -add-conn)")
 
 	// Other flags
-	sqlFile := flag.String("sql-file", "dibber.sql", "SQL file to sync with the query window")
+	sqlDir := flag.String("sql-dir", "", "Directory for SQL files (overrides config, default: $HOME/sql)")
+	setSQLDir := flag.String("set-sql-dir", "", "Set the SQL directory in config")
+	sqlFile := flag.String("sql-file", "dibber.sql", "SQL file to sync with the query window (relative to sql-dir unless absolute)")
 	outputFormat := flag.String("format", "table", "Output format for piped queries: table, csv, tsv")
 	flag.Parse()
 
@@ -58,6 +61,11 @@ func main() {
 
 	if *changePassword {
 		handleChangePassword()
+		return
+	}
+
+	if *setSQLDir != "" {
+		handleSetSQLDir(*setSQLDir)
 		return
 	}
 
@@ -108,20 +116,39 @@ func main() {
 	}
 
 	// Interactive mode: start the Bubble Tea UI
-	// Load initial SQL content from file (if it exists)
-	var initialSQL string
-	if data, err := os.ReadFile(*sqlFile); err == nil {
-		initialSQL = string(data)
-	}
 
-	// Create vault manager for connection switching
+	// Create vault manager for connection switching and config
 	vm := NewVaultManager()
 	_ = vm.LoadConfig() // Ignore error - might not have a config yet
+
+	// Determine SQL directory: flag overrides config, config overrides default
+	resolvedSQLDir := vm.GetSQLDir() // Gets from config or default
+	if *sqlDir != "" {
+		resolvedSQLDir = *sqlDir // Flag overrides
+	}
+
+	// Ensure SQL directory exists
+	if err := os.MkdirAll(resolvedSQLDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create SQL directory %s: %v\n", resolvedSQLDir, err)
+		os.Exit(1)
+	}
+
+	// Resolve SQL file path (relative to sql-dir unless absolute)
+	resolvedSQLFile := *sqlFile
+	if !filepath.IsAbs(resolvedSQLFile) {
+		resolvedSQLFile = filepath.Join(resolvedSQLDir, resolvedSQLFile)
+	}
+
+	// Load initial SQL content from file (if it exists)
+	var initialSQL string
+	if data, err := os.ReadFile(resolvedSQLFile); err == nil {
+		initialSQL = string(data)
+	}
 
 	// Get the theme
 	theme := GetTheme(connInfo.theme)
 
-	p := tea.NewProgram(NewModel(db, detectedType, *sqlFile, initialSQL, vm, *connectionName, theme), tea.WithAltScreen())
+	p := tea.NewProgram(NewModel(db, detectedType, resolvedSQLDir, resolvedSQLFile, initialSQL, vm, *connectionName, theme), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
 		os.Exit(1)
@@ -150,8 +177,10 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Options:")
 	fmt.Fprintln(os.Stderr, "  -dsn             Database connection string")
-	fmt.Fprintln(os.Stderr, "  -conn      Named connection from ~/.dibber.yaml")
+	fmt.Fprintln(os.Stderr, "  -conn            Named connection from ~/.dibber.yaml")
 	fmt.Fprintln(os.Stderr, "  -type            Database type: mysql, postgres, sqlite (auto-detected)")
+	fmt.Fprintln(os.Stderr, "  -sql-dir         Directory for SQL files (overrides config)")
+	fmt.Fprintln(os.Stderr, "  -set-sql-dir     Set the SQL directory in config")
 	fmt.Fprintln(os.Stderr, "  -sql-file        SQL file to sync queries (default: dibber.sql)")
 	fmt.Fprintln(os.Stderr, "  -format          Output format for pipe mode: table, csv, tsv (default: table)")
 }
@@ -354,6 +383,39 @@ func handleRemoveConnection(name string) {
 	}
 
 	fmt.Printf("Connection %q removed.\n", name)
+}
+
+// handleSetSQLDir sets the SQL directory in the config
+func handleSetSQLDir(dir string) {
+	// Expand ~ to home directory
+	if strings.HasPrefix(dir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get home directory: %v\n", err)
+			os.Exit(1)
+		}
+		dir = filepath.Join(home, dir[2:])
+	}
+
+	// Convert to absolute path
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve path: %v\n", err)
+		os.Exit(1)
+	}
+
+	vm := NewVaultManager()
+	if err := vm.LoadConfig(); err != nil && !errors.Is(err, ErrConfigNotFound) {
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := vm.SetSQLDir(absDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("SQL directory set to: %s\n", absDir)
 }
 
 // handleChangePassword changes the master password

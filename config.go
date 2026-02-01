@@ -37,6 +37,9 @@ type Config struct {
 
 	// Connections keyed by name
 	Connections map[string]*Connection `yaml:"connections"`
+
+	// SQLDir is the directory for SQL files (defaults to $HOME/sql if empty)
+	SQLDir string `yaml:"sql_dir,omitempty"`
 }
 
 // configPath returns the full path to the config file
@@ -329,5 +332,29 @@ func (vm *VaultManager) ChangePassword(newPassword string) error {
 	vm.config.SetSalt(salt)
 	vm.config.EncryptedDataKey = encryptedDataKey
 
+	return SaveConfig(vm.config)
+}
+
+// GetSQLDir returns the configured SQL directory, or the default if not set
+func (vm *VaultManager) GetSQLDir() string {
+	if vm.config != nil && vm.config.SQLDir != "" {
+		return vm.config.SQLDir
+	}
+	// Default to $HOME/sql
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "sql" // fallback
+	}
+	return filepath.Join(home, "sql")
+}
+
+// SetSQLDir sets the SQL directory in the config and saves it
+func (vm *VaultManager) SetSQLDir(dir string) error {
+	if vm.config == nil {
+		vm.config = &Config{
+			Connections: make(map[string]*Connection),
+		}
+	}
+	vm.config.SQLDir = dir
 	return SaveConfig(vm.config)
 }

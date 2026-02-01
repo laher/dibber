@@ -15,13 +15,12 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), dibber prov
 
 - **Interactive SQL Editor**: Write and execute SQL queries with a full-featured text area
 - **Results Table**: View query results in a paginated, navigable table
-- **Row Detail View**: Inspect and edit individual rows
-- **Smart Data Types**: Proper handling of NULLs, numeric types, booleans, and text
+- **Saved Connections**: Store database connections **securely with encryption**
+- **Row Detail View**: Inspect and **edit** individual rows
 - **SQL Generation**: Automatically generate UPDATE, DELETE, and INSERT statements from your edits
 - **Pipe Mode**: Execute queries from stdin and output results in table, CSV, or TSV format
 - **Multi-Database**: Works with MySQL, PostgreSQL, and SQLite
-- **Saved Connections**: Store database connections securely with encryption
-- **Themes**: Visual themes to distinguish between environments (e.g., red for production)
+- **Themes**: Visual themes to distinguish between environments (e.g. red for production)
 
 ## Installation
 
@@ -64,7 +63,7 @@ echo 'SELECT * FROM orders' | dibber -conn prod -format csv > orders.csv
 dibber -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]
 ```
 
-The interactive TUI lets you write queries, navigate results, and edit data. Query content is automatically synced to a SQL file (default: `dibber.sql`).
+The interactive TUI lets you write queries, navigate results, and edit data. Query content is automatically synced to a SQL file in the configured SQL directory (default: `$HOME/sql/dibber.sql`).
 
 ### Pipe Mode
 
@@ -94,7 +93,9 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 | `-dsn` | Database connection string (use this OR `-conn`) |
 | `-conn` | Named connection from `~/.dibber.yaml` |
 | `-type` | Database type: `mysql`, `postgres`, `sqlite` (auto-detected from DSN) |
-| `-sql-file` | SQL file to sync with query editor (default: `dibber.sql`) |
+| `-sql-dir` | Directory for SQL files (overrides config setting) |
+| `-set-sql-dir` | Set the SQL directory in `~/.dibber.yaml` |
+| `-sql-file` | SQL file to sync with query editor (default: `dibber.sql`, relative to sql-dir) |
 | `-format` | Output format for pipe mode: `table`, `csv`, `tsv` (default: `table`) |
 
 ### Connection Management Options
@@ -107,6 +108,20 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 | `-change-password` | Change the master password |
 | `-theme` | Theme for the connection (use with `-add-conn`) |
 | `-list-themes` | List all available themes |
+
+### SQL Directory
+
+SQL files are stored in a configurable directory. The default is `$HOME/sql`.
+
+```bash
+# Set the SQL directory in config (persisted to ~/.dibber.yaml)
+dibber -set-sql-dir ~/my-sql-scripts
+
+# Override for a single session
+dibber -conn mydb -sql-dir /tmp/scratch
+```
+
+The SQL directory is created automatically if it doesn't exist. The file dialog (Ctrl+O) opens in this directory by default.
 
 ### Connection Examples
 
