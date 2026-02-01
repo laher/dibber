@@ -20,11 +20,17 @@ var (
 	ErrVaultLocked        = errors.New("vault is locked")
 )
 
-// Connection represents an encrypted connection entry
+// Connection represents a connection entry (encrypted or plaintext)
 type Connection struct {
-	EncryptedDSN string `yaml:"encrypted_dsn"`
-	Type         string `yaml:"type,omitempty"`  // mysql, postgres, sqlite (optional, for auto-detection override)
-	Theme        string `yaml:"theme,omitempty"` // optional theme name for visual distinction
+	EncryptedDSN string `yaml:"encrypted_dsn,omitempty"` // encrypted DSN (mutually exclusive with DSN)
+	DSN          string `yaml:"dsn,omitempty"`           // plaintext DSN for local/dev databases
+	Type         string `yaml:"type,omitempty"`          // mysql, postgres, sqlite (optional, for auto-detection override)
+	Theme        string `yaml:"theme,omitempty"`         // optional theme name for visual distinction
+}
+
+// IsEncrypted returns true if this connection uses encrypted storage
+func (c *Connection) IsEncrypted() bool {
+	return c.EncryptedDSN != ""
 }
 
 // Config represents the ~/.dibber.yaml configuration file
@@ -195,18 +201,61 @@ func (vm *VaultManager) Unlock(password string) error {
 	vm.vault.dataKey = dataKey
 	vm.vault.isUnlocked = true
 
-	// Decrypt all connections into memory
+	// Load all connections into memory (decrypt encrypted ones, copy plaintext ones)
 	for name, conn := range vm.config.Connections {
-		dsn, err := DecryptDSN(dataKey, conn.EncryptedDSN)
-		if err != nil {
-			// If one fails, lock and return error
-			vm.vault.Lock()
-			return fmt.Errorf("failed to decrypt connection %q: %w", name, err)
+		if conn.IsEncrypted() {
+			dsn, err := DecryptDSN(dataKey, conn.EncryptedDSN)
+			if err != nil {
+				// If one fails, lock and return error
+				vm.vault.Lock()
+				return fmt.Errorf("failed to decrypt connection %q: %w", name, err)
+			}
+			vm.vault.connections[name] = dsn
+		} else {
+			// Plaintext connection
+			vm.vault.connections[name] = conn.DSN
 		}
-		vm.vault.connections[name] = dsn
 	}
 
 	return nil
+}
+
+// LoadPlaintextConnections loads only plaintext connections into the vault
+// This allows using unencrypted connections without unlocking the vault
+func (vm *VaultManager) LoadPlaintextConnections() {
+	if vm.config == nil {
+		return
+	}
+	for name, conn := range vm.config.Connections {
+		if !conn.IsEncrypted() {
+			vm.vault.connections[name] = conn.DSN
+		}
+	}
+}
+
+// HasEncryptedConnections returns true if there are any encrypted connections
+func (vm *VaultManager) HasEncryptedConnections() bool {
+	if vm.config == nil {
+		return false
+	}
+	for _, conn := range vm.config.Connections {
+		if conn.IsEncrypted() {
+			return true
+		}
+	}
+	return false
+}
+
+// IsPlaintextConnection returns true if the named connection is plaintext (unencrypted)
+func (vm *VaultManager) IsPlaintextConnection(name string) bool {
+	if vm.config == nil {
+		return false
+	}
+	conn, ok := vm.config.Connections[name]
+	if !ok {
+		return false
+	}
+	return !conn.IsEncrypted()
 }
 
 // Lock locks the vault
@@ -239,21 +288,35 @@ func (vm *VaultManager) InitializeWithPassword(password string) error {
 
 // AddConnection adds a new encrypted connection
 func (vm *VaultManager) AddConnection(name, dsn, dbType, theme string) error {
-	if !vm.vault.IsUnlocked() {
-		return ErrVaultLocked
-	}
+	return vm.AddConnectionWithEncryption(name, dsn, dbType, theme, true)
+}
 
-	// Encrypt the DSN
-	encryptedDSN, err := EncryptDSN(vm.vault.dataKey, dsn)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt DSN: %w", err)
-	}
+// AddConnectionWithEncryption adds a new connection, optionally encrypting the DSN
+func (vm *VaultManager) AddConnectionWithEncryption(name, dsn, dbType, theme string, encrypt bool) error {
+	if encrypt {
+		if !vm.vault.IsUnlocked() {
+			return ErrVaultLocked
+		}
 
-	// Add to config
-	vm.config.Connections[name] = &Connection{
-		EncryptedDSN: encryptedDSN,
-		Type:         dbType,
-		Theme:        theme,
+		// Encrypt the DSN
+		encryptedDSN, err := EncryptDSN(vm.vault.dataKey, dsn)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt DSN: %w", err)
+		}
+
+		// Add to config
+		vm.config.Connections[name] = &Connection{
+			EncryptedDSN: encryptedDSN,
+			Type:         dbType,
+			Theme:        theme,
+		}
+	} else {
+		// Store plaintext DSN
+		vm.config.Connections[name] = &Connection{
+			DSN:   dsn,
+			Type:  dbType,
+			Theme: theme,
+		}
 	}
 
 	// Add to in-memory vault
@@ -263,14 +326,31 @@ func (vm *VaultManager) AddConnection(name, dsn, dbType, theme string) error {
 	return SaveConfig(vm.config)
 }
 
-// RemoveConnection removes a connection
+// RemoveConnection removes a connection (requires vault to be unlocked for encrypted connections)
 func (vm *VaultManager) RemoveConnection(name string) error {
-	if !vm.vault.IsUnlocked() {
+	if !vm.config.HasConnection(name) {
+		return ErrConnectionNotFound
+	}
+
+	// For encrypted connections, vault must be unlocked
+	if !vm.IsPlaintextConnection(name) && !vm.vault.IsUnlocked() {
 		return ErrVaultLocked
 	}
 
+	delete(vm.config.Connections, name)
+	delete(vm.vault.connections, name)
+
+	return SaveConfig(vm.config)
+}
+
+// RemovePlaintextConnection removes a plaintext connection (no vault unlock needed)
+func (vm *VaultManager) RemovePlaintextConnection(name string) error {
 	if !vm.config.HasConnection(name) {
 		return ErrConnectionNotFound
+	}
+
+	if !vm.IsPlaintextConnection(name) {
+		return ErrVaultLocked // Use this error to indicate unlock is needed
 	}
 
 	delete(vm.config.Connections, name)
@@ -281,6 +361,13 @@ func (vm *VaultManager) RemoveConnection(name string) error {
 
 // GetConnection returns a decrypted connection DSN, type, and theme
 func (vm *VaultManager) GetConnection(name string) (dsn string, dbType string, theme string, err error) {
+	// Check if it's a plaintext connection first
+	if vm.IsPlaintextConnection(name) {
+		conn := vm.config.Connections[name]
+		return conn.DSN, conn.Type, conn.Theme, nil
+	}
+
+	// For encrypted connections, vault must be unlocked
 	if !vm.vault.IsUnlocked() {
 		return "", "", "", ErrVaultLocked
 	}

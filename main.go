@@ -30,6 +30,7 @@ func main() {
 	listThemes := flag.Bool("list-themes", false, "List all available themes")
 	changePassword := flag.Bool("change-password", false, "Change the encryption password")
 	themeName := flag.String("theme", "", "Theme for the connection (use with -add-conn)")
+	noEncrypt := flag.Bool("no-encrypt", false, "Store DSN in plaintext (use with -add-conn for local databases)")
 
 	// Other flags
 	sqlDir := flag.String("sql-dir", "", "Directory for SQL files (overrides config, default: $HOME/sql)")
@@ -55,7 +56,7 @@ func main() {
 	}
 
 	if *addConnection != "" {
-		handleAddConnection(*addConnection, *dsn, *dbType, *themeName)
+		handleAddConnection(*addConnection, *dsn, *dbType, *themeName, *noEncrypt)
 		return
 	}
 
@@ -162,7 +163,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  dibber -conn 'name'       (use a saved connection)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Connection Management:")
-	fmt.Fprintln(os.Stderr, "  dibber -add-conn 'name' -dsn 'connection_string' [-type db_type]")
+	fmt.Fprintln(os.Stderr, "  dibber -add-conn 'name' -dsn 'connection_string' [-type db_type] [-no-encrypt]")
 	fmt.Fprintln(os.Stderr, "  dibber -remove-conn 'name'")
 	fmt.Fprintln(os.Stderr, "  dibber -list-conns")
 	fmt.Fprintln(os.Stderr, "  dibber -change-password")
@@ -179,6 +180,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  -dsn             Database connection string")
 	fmt.Fprintln(os.Stderr, "  -conn            Named connection from ~/.dibber.yaml")
 	fmt.Fprintln(os.Stderr, "  -type            Database type: mysql, postgres, sqlite (auto-detected)")
+	fmt.Fprintln(os.Stderr, "  -no-encrypt      Store DSN in plaintext (for local databases, no password needed)")
 	fmt.Fprintln(os.Stderr, "  -sql-dir         Directory for SQL files (overrides config)")
 	fmt.Fprintln(os.Stderr, "  -set-sql-dir     Set the SQL directory in config")
 	fmt.Fprintln(os.Stderr, "  -sql-file        SQL file to sync queries (default: dibber.sql)")
@@ -206,8 +208,29 @@ func resolveDSN(dsn, connectionName, dbType string) (connectionInfo, error) {
 			return connectionInfo{}, fmt.Errorf("failed to load config: %w", err)
 		}
 
+		// Check if this specific connection exists
+		if !vm.config.HasConnection(connectionName) {
+			return connectionInfo{}, fmt.Errorf("connection %q not found", connectionName)
+		}
+
+		// Check if this is a plaintext connection (no password needed)
+		if vm.IsPlaintextConnection(connectionName) {
+			connDSN, connType, connTheme, err := vm.GetConnection(connectionName)
+			if err != nil {
+				return connectionInfo{}, fmt.Errorf("connection %q not found", connectionName)
+			}
+
+			// Use stored type if not overridden
+			if dbType == "" {
+				dbType = connType
+			}
+
+			return connectionInfo{dsn: connDSN, dbType: dbType, theme: connTheme}, nil
+		}
+
+		// Encrypted connection - need vault
 		if !vm.HasVault() {
-			return connectionInfo{}, errors.New("no saved connections - add one with -add-conn first")
+			return connectionInfo{}, errors.New("no encrypted connections configured - connection may be corrupted")
 		}
 
 		// Prompt for password to unlock
@@ -247,11 +270,6 @@ func handleListConnections() {
 		return
 	}
 
-	if !vm.HasVault() {
-		fmt.Fprintln(os.Stderr, "No saved connections.")
-		return
-	}
-
 	names := vm.ListConnections()
 	if len(names) == 0 {
 		fmt.Fprintln(os.Stderr, "No saved connections.")
@@ -260,7 +278,13 @@ func handleListConnections() {
 
 	fmt.Println("Saved connections:")
 	for _, name := range names {
-		fmt.Printf("  - %s\n", name)
+		encStatus := ""
+		if vm.IsPlaintextConnection(name) {
+			encStatus = " (plaintext)"
+		} else {
+			encStatus = " (encrypted)"
+		}
+		fmt.Printf("  - %s%s\n", name, encStatus)
 	}
 }
 
@@ -276,7 +300,7 @@ func handleListThemes() {
 }
 
 // handleAddConnection adds a new connection
-func handleAddConnection(name, dsn, dbType, theme string) {
+func handleAddConnection(name, dsn, dbType, theme string, noEncrypt bool) {
 	if dsn == "" {
 		fmt.Fprintln(os.Stderr, "Error: -dsn is required when adding a connection")
 		os.Exit(1)
@@ -296,6 +320,27 @@ func handleAddConnection(name, dsn, dbType, theme string) {
 		os.Exit(1)
 	}
 
+	// Auto-detect type if not specified
+	if dbType == "" {
+		dbType = detectDBType(dsn)
+	}
+
+	if noEncrypt {
+		// Store plaintext connection - no vault needed
+		if err := vm.AddConnectionWithEncryption(name, dsn, dbType, theme, false); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to add connection: %v\n", err)
+			os.Exit(1)
+		}
+
+		themeInfo := ""
+		if theme != "" {
+			themeInfo = fmt.Sprintf(" with theme %q", theme)
+		}
+		fmt.Printf("Connection %q saved (plaintext)%s.\n", name, themeInfo)
+		return
+	}
+
+	// Encrypted connection - need vault
 	if vm.HasVault() {
 		// Vault exists, unlock it
 		password, err := promptPassword("Enter encryption password: ")
@@ -328,11 +373,6 @@ func handleAddConnection(name, dsn, dbType, theme string) {
 		fmt.Println("Vault initialized successfully.")
 	}
 
-	// Auto-detect type if not specified
-	if dbType == "" {
-		dbType = detectDBType(dsn)
-	}
-
 	if err := vm.AddConnection(name, dsn, dbType, theme); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to add connection: %v\n", err)
 		os.Exit(1)
@@ -342,7 +382,7 @@ func handleAddConnection(name, dsn, dbType, theme string) {
 	if theme != "" {
 		themeInfo = fmt.Sprintf(" with theme %q", theme)
 	}
-	fmt.Printf("Connection %q saved successfully%s.\n", name, themeInfo)
+	fmt.Printf("Connection %q saved (encrypted)%s.\n", name, themeInfo)
 }
 
 // handleRemoveConnection removes a connection
@@ -353,8 +393,24 @@ func handleRemoveConnection(name string) {
 		os.Exit(1)
 	}
 
+	if !vm.config.HasConnection(name) {
+		fmt.Fprintf(os.Stderr, "Connection %q not found.\n", name)
+		os.Exit(1)
+	}
+
+	// Check if it's a plaintext connection (no password needed)
+	if vm.IsPlaintextConnection(name) {
+		if err := vm.RemovePlaintextConnection(name); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to remove connection: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Connection %q removed.\n", name)
+		return
+	}
+
+	// Encrypted connection - need vault password
 	if !vm.HasVault() {
-		fmt.Fprintln(os.Stderr, "No saved connections.")
+		fmt.Fprintln(os.Stderr, "No encrypted vault configured.")
 		os.Exit(1)
 	}
 

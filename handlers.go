@@ -256,6 +256,8 @@ func (m Model) handleConnectionPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAddTypeMode(msg)
 	case PickerModeAddTheme:
 		return m.handleAddThemeMode(msg)
+	case PickerModeAddEncrypt:
+		return m.handleAddEncryptMode(msg)
 	case PickerModeConfirmDelete:
 		return m.handleConfirmDeleteMode(msg)
 	}
@@ -538,34 +540,15 @@ func (m Model) handleAddThemeMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.connectionPicker.errorMessage = ""
 		return m, nil
 	case "enter":
-		// Save the connection
+		// Store theme and move to encryption choice
 		theme := themes[m.connectionPicker.themeIdx]
 		if theme == "default" {
 			theme = ""
 		}
-		err := m.vaultManager.AddConnection(
-			m.connectionPicker.newConnName,
-			m.connectionPicker.newConnDSN,
-			m.connectionPicker.newConnType,
-			theme,
-		)
-		if err != nil {
-			m.connectionPicker.errorMessage = "Failed to save: " + err.Error()
-			return m, nil
-		}
-		// Refresh and go back to list
-		m.connectionPicker.connections = m.vaultManager.ListConnections()
-		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.newConnTheme = theme
+		m.connectionPicker.mode = PickerModeAddEncrypt
+		m.connectionPicker.encryptOptIdx = 0 // default to encrypted
 		m.connectionPicker.errorMessage = ""
-		m.connectionPicker.newConnName = ""
-		m.connectionPicker.newConnDSN = ""
-		// Select the new connection
-		for i, name := range m.connectionPicker.connections {
-			if name == m.connectionPicker.newConnName {
-				m.connectionPicker.selectedIdx = i
-				break
-			}
-		}
 		return m, nil
 	case "up", "k":
 		if m.connectionPicker.themeIdx > 0 {
@@ -576,6 +559,93 @@ func (m Model) handleAddThemeMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.connectionPicker.themeIdx < len(themes)-1 {
 			m.connectionPicker.themeIdx++
 		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleAddEncryptMode handles choosing whether to encrypt the DSN
+func (m Model) handleAddEncryptMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	options := []string{"Encrypted (requires password)", "Plaintext (no password needed)"}
+
+	switch msg.String() {
+	case "esc":
+		m.connectionPicker.mode = PickerModeAddTheme
+		m.connectionPicker.errorMessage = ""
+		return m, nil
+	case "enter":
+		m.connectionPicker.noEncrypt = m.connectionPicker.encryptOptIdx == 1
+
+		if m.connectionPicker.noEncrypt {
+			// Plaintext - save directly without vault
+			err := m.vaultManager.AddConnectionWithEncryption(
+				m.connectionPicker.newConnName,
+				m.connectionPicker.newConnDSN,
+				m.connectionPicker.newConnType,
+				m.connectionPicker.newConnTheme,
+				false, // no encryption
+			)
+			if err != nil {
+				m.connectionPicker.errorMessage = "Failed to save: " + err.Error()
+				return m, nil
+			}
+		} else {
+			// Encrypted - need vault unlocked
+			if !m.vaultManager.HasVault() {
+				// Need to create vault first
+				m.connectionPicker.mode = PickerModeCreateVault
+				m.connectionPicker.errorMessage = ""
+				return m, nil
+			}
+			if !m.vaultManager.IsUnlocked() {
+				// Need to unlock vault first
+				m.connectionPicker.mode = PickerModeUnlock
+				m.connectionPicker.errorMessage = ""
+				return m, nil
+			}
+			// Vault is unlocked - save encrypted
+			err := m.vaultManager.AddConnection(
+				m.connectionPicker.newConnName,
+				m.connectionPicker.newConnDSN,
+				m.connectionPicker.newConnType,
+				m.connectionPicker.newConnTheme,
+			)
+			if err != nil {
+				m.connectionPicker.errorMessage = "Failed to save: " + err.Error()
+				return m, nil
+			}
+		}
+
+		// Refresh and go back to list
+		m.connectionPicker.connections = m.vaultManager.ListConnections()
+		m.connectionPicker.mode = PickerModeList
+		m.connectionPicker.errorMessage = ""
+		savedName := m.connectionPicker.newConnName
+		m.connectionPicker.newConnName = ""
+		m.connectionPicker.newConnDSN = ""
+		m.connectionPicker.newConnType = ""
+		m.connectionPicker.newConnTheme = ""
+		m.connectionPicker.noEncrypt = false
+		// Select the new connection
+		for i, name := range m.connectionPicker.connections {
+			if name == savedName {
+				m.connectionPicker.selectedIdx = i
+				break
+			}
+		}
+		return m, nil
+	case "up", "k":
+		if m.connectionPicker.encryptOptIdx > 0 {
+			m.connectionPicker.encryptOptIdx--
+		}
+		return m, nil
+	case "down", "j":
+		if m.connectionPicker.encryptOptIdx < len(options)-1 {
+			m.connectionPicker.encryptOptIdx++
+		}
+		return m, nil
+	case "tab":
+		m.connectionPicker.encryptOptIdx = (m.connectionPicker.encryptOptIdx + 1) % len(options)
 		return m, nil
 	}
 	return m, nil

@@ -385,10 +385,15 @@ func (m Model) renderConnectionPicker() string {
 
 			for i := start; i < end; i++ {
 				name := m.connectionPicker.connections[i]
+				encIcon := "🔒" // encrypted
+				if m.vaultManager != nil && m.vaultManager.IsPlaintextConnection(name) {
+					encIcon = "📄" // plaintext
+				}
+				displayName := fmt.Sprintf("%s %s", encIcon, name)
 				if i == m.connectionPicker.selectedIdx {
-					b.WriteString(fmt.Sprintf("  ▶ %s", styles.SelectedRow.Render(name)))
+					b.WriteString(fmt.Sprintf("  ▶ %s", styles.SelectedRow.Render(displayName)))
 				} else {
-					b.WriteString(fmt.Sprintf("    %s", name))
+					b.WriteString(fmt.Sprintf("    %s", displayName))
 				}
 				b.WriteString("\n")
 			}
@@ -490,7 +495,34 @@ func (m Model) renderConnectionPicker() string {
 
 		m.renderPickerError(&b, styles)
 		b.WriteString("\n")
-		b.WriteString(styles.Help.Render("↑↓: Select | Enter: Save Connection | Esc: Back"))
+		b.WriteString(styles.Help.Render("↑↓: Select | Enter: Continue | Esc: Back"))
+
+	case PickerModeAddEncrypt:
+		b.WriteString(styles.Title.Render("➕  Add Connection - Storage"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("  Connection: %s (%s)\n\n", m.connectionPicker.newConnName, m.connectionPicker.newConnType))
+		b.WriteString("  How should the DSN be stored?\n\n")
+
+		options := []struct {
+			name string
+			desc string
+		}{
+			{"Encrypted", "Secure storage, requires password to unlock"},
+			{"Plaintext", "No password needed (for local databases)"},
+		}
+
+		for i, opt := range options {
+			if i == m.connectionPicker.encryptOptIdx {
+				b.WriteString(fmt.Sprintf("  ▶ %s", styles.SelectedRow.Render(fmt.Sprintf("%-12s %s", opt.name, opt.desc))))
+			} else {
+				b.WriteString(fmt.Sprintf("    %-12s %s", opt.name, opt.desc))
+			}
+			b.WriteString("\n")
+		}
+
+		m.renderPickerError(&b, styles)
+		b.WriteString("\n")
+		b.WriteString(styles.Help.Render("↑↓/Tab: Select | Enter: Save Connection | Esc: Back"))
 
 	case PickerModeConfirmDelete:
 		b.WriteString(styles.Title.Render("🗑️  Delete Connection"))

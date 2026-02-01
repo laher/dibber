@@ -108,6 +108,7 @@ const (
 	PickerModeAddDSN
 	PickerModeAddType
 	PickerModeAddTheme
+	PickerModeAddEncrypt // choose whether to encrypt the DSN
 	PickerModeConfirmDelete
 	PickerModeCreateVault
 	PickerModeConfirmVaultPassword
@@ -126,9 +127,11 @@ type ConnectionPicker struct {
 	confirmPasswordInput string
 
 	// New connection input
-	newConnName  string
-	newConnDSN   string
-	newConnType  string
-	newConnTheme string
-	themeIdx     int // for theme selection
+	newConnName   string
+	newConnDSN    string
+	newConnType   string
+	newConnTheme  string
+	themeIdx      int  // for theme selection
+	noEncrypt     bool // store DSN in plaintext (for local databases)
+	encryptOptIdx int  // 0 = encrypted, 1 = plaintext
 }

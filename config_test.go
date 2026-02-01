@@ -338,3 +338,121 @@ func TestVaultManagerChangePassword(t *testing.T) {
 		t.Errorf("dsn = %q, want test-dsn", dsn)
 	}
 }
+
+func TestPlaintextConnection(t *testing.T) {
+	_, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	vm := NewVaultManager()
+	err := vm.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// Add a plaintext connection (no vault needed)
+	err = vm.AddConnectionWithEncryption("local", "/tmp/test.db", "sqlite", "", false)
+	if err != nil {
+		t.Fatalf("AddConnectionWithEncryption failed: %v", err)
+	}
+
+	// Verify it's stored as plaintext
+	if !vm.IsPlaintextConnection("local") {
+		t.Error("connection should be plaintext")
+	}
+
+	// Should be able to get connection without unlocking vault
+	dsn, dbType, _, err := vm.GetConnection("local")
+	if err != nil {
+		t.Fatalf("GetConnection failed: %v", err)
+	}
+	if dsn != "/tmp/test.db" {
+		t.Errorf("dsn = %q, want /tmp/test.db", dsn)
+	}
+	if dbType != "sqlite" {
+		t.Errorf("dbType = %q, want sqlite", dbType)
+	}
+
+	// Create new vault manager and verify plaintext connection works without unlock
+	vm2 := NewVaultManager()
+	if err := vm2.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	// Should NOT have vault (no encrypted connections)
+	if vm2.HasVault() {
+		t.Error("should not have vault when only plaintext connections exist")
+	}
+
+	// Should still be able to get plaintext connection
+	dsn, _, _, err = vm2.GetConnection("local")
+	if err != nil {
+		t.Fatalf("GetConnection failed for plaintext: %v", err)
+	}
+	if dsn != "/tmp/test.db" {
+		t.Errorf("dsn = %q, want /tmp/test.db", dsn)
+	}
+
+	// Can remove plaintext connection without password
+	err = vm2.RemovePlaintextConnection("local")
+	if err != nil {
+		t.Fatalf("RemovePlaintextConnection failed: %v", err)
+	}
+
+	if vm2.config.HasConnection("local") {
+		t.Error("connection should be removed")
+	}
+}
+
+func TestMixedConnections(t *testing.T) {
+	_, cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	vm := NewVaultManager()
+	_ = vm.LoadConfig()
+
+	// Initialize vault for encrypted connections
+	if err := vm.InitializeWithPassword("test-password"); err != nil {
+		t.Fatalf("InitializeWithPassword failed: %v", err)
+	}
+
+	// Add encrypted connection
+	if err := vm.AddConnection("prod", "postgres://prod.example.com/db", "postgres", ""); err != nil {
+		t.Fatalf("AddConnection failed: %v", err)
+	}
+
+	// Add plaintext connection
+	if err := vm.AddConnectionWithEncryption("local", "/tmp/local.db", "sqlite", "", false); err != nil {
+		t.Fatalf("AddConnectionWithEncryption failed: %v", err)
+	}
+
+	// Lock the vault
+	vm.Lock()
+
+	// Should be able to get plaintext connection when locked
+	dsn, _, _, err := vm.GetConnection("local")
+	if err != nil {
+		t.Fatalf("GetConnection for plaintext should work when locked: %v", err)
+	}
+	if dsn != "/tmp/local.db" {
+		t.Errorf("dsn = %q, want /tmp/local.db", dsn)
+	}
+
+	// Should NOT be able to get encrypted connection when locked
+	_, _, _, err = vm.GetConnection("prod")
+	if err != ErrVaultLocked {
+		t.Errorf("expected ErrVaultLocked for encrypted connection, got %v", err)
+	}
+
+	// Verify IsPlaintextConnection
+	if !vm.IsPlaintextConnection("local") {
+		t.Error("local should be plaintext")
+	}
+	if vm.IsPlaintextConnection("prod") {
+		t.Error("prod should NOT be plaintext")
+	}
+
+	// Verify HasEncryptedConnections
+	if !vm.HasEncryptedConnections() {
+		t.Error("should have encrypted connections")
+	}
+}

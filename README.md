@@ -108,6 +108,7 @@ echo 'SELECT * FROM users' | dibber -dsn '...' -format csv | grep 'active'
 | `-change-password` | Change the encryption password |
 | `-theme` | Theme for the connection (use with `-add-conn`) |
 | `-list-themes` | List all available themes |
+| `-no-encrypt` | Store DSN in plaintext (use with `-add-conn` for local databases) |
 
 ### SQL Directory
 
@@ -154,7 +155,10 @@ dibber -dsn ':memory:'  # In-memory database
 
 ## Saved Connections
 
-Dibber can store database connections for reuse. Connections are encrypted and stored in `~/.dibber.yaml`.
+Dibber can store database connections for reuse. Connections are stored in `~/.dibber.yaml` and can be either:
+
+- **Encrypted** (default): Secured with AES-256-GCM encryption, requires password to unlock
+- **Plaintext**: No encryption, no password needed (ideal for local development databases)
 
 ### Adding Connections via the UI (Recommended)
 
@@ -162,22 +166,25 @@ The most secure way to add connections is through the UI, as the DSN is never vi
 
 1. Start dibber with any connection (or even a SQLite memory database): `dibber -dsn ':memory:'`
 2. Press **Ctrl+P** to open the Connection Manager
-3. If this is your first time, you'll be prompted to create an encryption password
-4. Press **a** to add a new connection
-5. Enter a name for the connection (e.g., "prod", "dev", "staging")
-6. Enter the DSN (displayed as dots for security)
-7. Select the database type (auto-detected if possible)
-8. Choose a theme (optional, but useful for distinguishing environments)
-9. Press Enter to save
+3. Press **a** to add a new connection
+4. Enter a name for the connection (e.g., "prod", "dev", "staging")
+5. Enter the DSN (displayed as dots for security)
+6. Select the database type (auto-detected if possible)
+7. Choose a theme (optional, but useful for distinguishing environments)
+8. Choose storage type:
+   - **Encrypted**: Requires password (for production/sensitive databases)
+   - **Plaintext**: No password needed (for local development databases)
+9. If encrypted, you'll be prompted to create/enter your encryption password
+10. Press Enter to save
 
-Your connection is now encrypted and stored securely.
+Encrypted connections show a 🔒 icon, plaintext connections show a 📄 icon.
 
 ### Adding Connections via Command Line
 
 You can also add connections from the command line, though this is less secure as the DSN appears in shell history:
 
 ```bash
-# Add a connection with a name
+# Add a connection with a name (encrypted by default)
 dibber -add-conn mydb -dsn 'postgres://user:pass@localhost/mydb'
 
 # Add with a specific theme
@@ -185,9 +192,14 @@ dibber -add-conn prod -dsn 'postgres://...' -theme production
 
 # Add with explicit database type
 dibber -add-conn legacy -dsn '...' -type mysql -theme gruvbox
+
+# Add a plaintext connection (no password required - ideal for local databases)
+dibber -add-conn local -dsn '/tmp/dev.db' -no-encrypt
 ```
 
-On first use, you'll be prompted to create an encryption password. This password protects all your saved connections.
+On first use with encrypted connections, you'll be prompted to create an encryption password. This password protects all your encrypted connections.
+
+**Plaintext connections** are useful for local development databases where encryption is unnecessary. They don't require a password to use and are marked with a different icon (📄) in the connection list.
 
 ### Using a Saved Connection
 
@@ -199,7 +211,7 @@ dibber -conn mydb
 echo 'SELECT * FROM users' | dibber -conn mydb -format csv
 ```
 
-You'll be prompted for your encryption password to unlock the connection vault.
+For encrypted connections, you'll be prompted for your encryption password. Plaintext connections don't require a password.
 
 ### Managing Connections
 
@@ -436,18 +448,29 @@ It's also a somewhat childish soundalike for "d-b" (database).
 
 ## TODOs
 
-- Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it (and therefore, no need for entering encryption password)
-- Tabs for multiple connections
-- Refine the concept of 'modal editor' - Esc to go to results view, providing
- more key mappings.
-- Maybe menus
-- 'rollover' sql file to back up sql file and clear it
-- Different default file per named connection? configurable (so that connections can share if needed)
-- Improve cursor - multiline selection
-- [not sure] autocompletion of SQL keywords and maybe table/column names
-- refine 'pipe mode'
-- pipe to external app for fetching encryption password? e.g. pass, op
+- [x] Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it (and therefore, no need for entering encryption password)
+- [ ] Different default file per named connection? configurable (so that connections can share if needed)
+- [ ] Tabs for multiple connections (note: should we share query window in some cases?)
+- [ ] Refine the concept of 'modal editor' - <Esc> to go to results view, providing more key mappings (without <Ctrl>) while in results view.
+- [ ] Menus
+- [ ] 'rollover' sql file to back up sql file and clear it
+- [ ] Improve cursor - support multiline selection in editor
+- [ ] formatting, linting, error-checking SQL
+- [ ] Refine 'pipe mode'
+  - [ ] Verify that pipe mode supports multiple queries from stdin.
+- [ ] Defer to external app for encryption password? e.g. pass, op,
 (1password), etc
+- [ ] Export results to csv/table/tsv. Maybe json,yaml too?
+
+### Later (after 0.0.1)
+
+- [ ] Autocompletion of SQL keywords.
+  - [ ] and [maybe] table/column names
+- [ ] docker-based tests for different dbs?
+- [ ] [maybe] add more databases?
+- [ ] [maybe] conditional compilation of cgo drivers
+- [ ] releases
+  - [ ] goreleaser? or some other release automation?
 
 ## License
 
