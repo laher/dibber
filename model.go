@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"os/exec"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -84,11 +86,41 @@ func (m Model) Init() tea.Cmd {
 	return textarea.Blink
 }
 
+// editorFinishedMsg is sent when the external editor exits
+type editorFinishedMsg struct {
+	err error
+}
+
+// openInExternalEditor opens the SQL file in the user's $EDITOR
+func (m *Model) openInExternalEditor() tea.Cmd {
+	// Save current content before opening editor
+	m.saveToFile()
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi" // fallback to vi if EDITOR not set
+	}
+
+	c := exec.Command(editor, m.sqlFile)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorFinishedMsg{err: err}
+	})
+}
+
 // Update implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case editorFinishedMsg:
+		// External editor closed - reload the file
+		if msg.err != nil {
+			m.statusMessage = fmt.Sprintf("Editor error: %v", msg.err)
+		} else {
+			m.reloadFileFromDisk()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Handle confirm quit dialog
 		if m.confirmingQuit {
@@ -129,6 +161,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+o" {
 			m.openFileDialog()
 			return m, nil
+		}
+
+		// Open in external editor - Ctrl+E
+		if msg.String() == "ctrl+e" {
+			if m.sqlFile == "" {
+				m.statusMessage = "No SQL file to edit"
+				return m, nil
+			}
+			return m, m.openInExternalEditor()
 		}
 
 		// Handle file dialog keys

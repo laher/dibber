@@ -98,6 +98,24 @@ func (m *Model) saveToFile() {
 	}
 }
 
+// reloadFileFromDisk reloads the SQL file from disk into the textarea
+func (m *Model) reloadFileFromDisk() {
+	if m.sqlFile == "" {
+		return
+	}
+
+	data, err := os.ReadFile(m.sqlFile)
+	if err != nil {
+		m.statusMessage = fmt.Sprintf("Error reloading file: %v", err)
+		return
+	}
+
+	content := string(data)
+	m.textarea.SetValue(content)
+	m.lastSavedContent = content
+	m.statusMessage = fmt.Sprintf("Reloaded %s", m.sqlFile)
+}
+
 // hasUnsavedChanges returns true if the textarea content differs from the last saved content
 func (m Model) hasUnsavedChanges() bool {
 	return m.textarea.Value() != m.lastSavedContent

@@ -315,15 +315,15 @@ func (m Model) View() string {
 	var helpText string
 	switch m.focus {
 	case focusQuery:
-		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Ctrl+P: Connections | Tab: Switch | Ctrl+Q: Quit"
+		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Ctrl+E: Editor | Ctrl+P: Connections | Tab: Switch | Ctrl+Q: Quit"
 	case focusResults:
 		if m.result != nil && len(m.result.Rows) > 0 {
-			helpText = "↑↓: Navigate | Enter: Detail | -/+: Resize | Tab: Switch | Ctrl+P: Connections | Ctrl+Q: Quit"
+			helpText = "↑↓: Navigate | Enter: Detail | -/+: Resize | Tab: Switch | Ctrl+E: Editor | Ctrl+Q: Quit"
 		} else {
-			helpText = "-/+: Resize | Tab: Switch | Ctrl+R: Run | Ctrl+P: Connections | Ctrl+Q: Quit"
+			helpText = "-/+: Resize | Tab: Switch | Ctrl+R: Run | Ctrl+E: Editor | Ctrl+Q: Quit"
 		}
 	default:
-		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+P: Connections | Tab: Switch | Ctrl+Q: Quit"
+		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+E: Editor | Ctrl+P: Connections | Tab: Switch | Ctrl+Q: Quit"
 	}
 	b.WriteString(styles.Help.Render(helpText))
 

@@ -14,6 +14,7 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), dibber prov
 ## Features
 
 - **Interactive SQL Editor**: Write and execute SQL queries with a full-featured text area
+- **External Editor Integration**: Press `Ctrl+E` to edit SQL in your preferred `$EDITOR` (vim, VS Code, etc.)
 - **Results Table**: View query results in a paginated, navigable table
 - **Saved Connections**: Store database connections **securely with encryption**
 - **Row Detail View**: Inspect and **edit** individual rows
@@ -387,6 +388,8 @@ The `production` theme uses aggressive red coloring throughout the UI. This make
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+E` | Open SQL file in external editor (`$EDITOR`) |
+| `Ctrl+O` | Open file dialog |
 | `Ctrl+P` | Open connection picker (switch databases) |
 | `Ctrl+S` | Save SQL file |
 | `Ctrl+Q` | Quit |
@@ -399,7 +402,8 @@ The query editor supports multiple queries separated by semicolons (`;`). When y
 |-----|--------|
 | `Ctrl+R` or `F5` | Execute query under cursor |
 | `Tab` | Switch focus to results |
-| `Ctrl+O` | Open file dialog |
+
+**Tip:** For complex SQL editing, press `Ctrl+E` to open the file in your preferred editor (vim, VS Code, etc.). When you save and close the editor, the changes are automatically reloaded into dibber.
 
 #### Text Selection
 
