@@ -64,7 +64,7 @@ echo 'SELECT * FROM orders' | dibber -conn prod -format csv > orders.csv
 dibber -dsn 'connection_string' [-type mysql|postgres|sqlite] [-sql-file filename.sql]
 ```
 
-The interactive TUI lets you write queries, navigate results, and edit data. Query content is automatically synced to a SQL file in the configured SQL directory (default: `$HOME/sql/dibber.sql`).
+The interactive TUI lets you write queries, navigate results, and edit data. Query content is automatically synced to a SQL file named after the database (e.g., `$HOME/sql/mydb.sql` for a database called `mydb`).
 
 ### Pipe Mode
 
@@ -138,7 +138,7 @@ For complex scripts with these constructs, execute statements individually or us
 | `-type` | Database type: `mysql`, `postgres`, `sqlite` (auto-detected from DSN) |
 | `-sql-dir` | Directory for SQL files (overrides config setting) |
 | `-set-sql-dir` | Set the SQL directory in `~/.dibber.yaml` |
-| `-sql-file` | SQL file to sync with query editor (default: `dibber.sql`, relative to sql-dir) |
+| `-sql-file` | SQL file to sync with query editor (default: `[database_name].sql`) |
 | `-format` | Output format for pipe mode: `table`, `csv`, `tsv` (default: `table`) |
 
 ### Connection Management Options
@@ -166,6 +166,25 @@ dibber -conn mydb -sql-dir /tmp/scratch
 ```
 
 The SQL directory is created automatically if it doesn't exist. The file dialog (Ctrl+O) opens in this directory by default.
+
+### SQL File Naming
+
+By default, the SQL file is named after the database/schema from your connection:
+
+| DSN | Default SQL File |
+|-----|------------------|
+| `postgres://user:pass@localhost/orders` | `orders.sql` |
+| `user:pass@tcp(localhost:3306)/inventory` | `inventory.sql` |
+| `/path/to/mydata.db` | `mydata.sql` |
+| `:memory:` | `memory.sql` |
+
+This means different databases get separate SQL files, but multiple connections to the same database (e.g., dev/staging/prod) share the same file - which is often useful for reusing queries.
+
+Override with `-sql-file` if you want a specific filename:
+
+```bash
+dibber -conn prod -sql-file prod-queries.sql
+```
 
 ### Connection Examples
 

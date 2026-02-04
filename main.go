@@ -35,7 +35,7 @@ func main() {
 	// Other flags
 	sqlDir := flag.String("sql-dir", "", "Directory for SQL files (overrides config, default: $HOME/sql)")
 	setSQLDir := flag.String("set-sql-dir", "", "Set the SQL directory in config")
-	sqlFile := flag.String("sql-file", "dibber.sql", "SQL file to sync with the query window (relative to sql-dir unless absolute)")
+	sqlFile := flag.String("sql-file", "", "SQL file to sync with the query window (default: derived from database name)")
 	outputFormat := flag.String("format", "table", "Output format for piped queries: table, csv, tsv")
 	flag.Parse()
 
@@ -135,7 +135,12 @@ func main() {
 	}
 
 	// Resolve SQL file path (relative to sql-dir unless absolute)
+	// If not specified, derive from database name
 	resolvedSQLFile := *sqlFile
+	if resolvedSQLFile == "" {
+		dbName := extractDatabaseName(connInfo.dsn, detectedType)
+		resolvedSQLFile = dbName + ".sql"
+	}
 	if !filepath.IsAbs(resolvedSQLFile) {
 		resolvedSQLFile = filepath.Join(resolvedSQLDir, resolvedSQLFile)
 	}
@@ -183,7 +188,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  -no-encrypt      Store DSN in plaintext (for local databases, no password needed)")
 	fmt.Fprintln(os.Stderr, "  -sql-dir         Directory for SQL files (overrides config)")
 	fmt.Fprintln(os.Stderr, "  -set-sql-dir     Set the SQL directory in config")
-	fmt.Fprintln(os.Stderr, "  -sql-file        SQL file to sync queries (default: dibber.sql)")
+	fmt.Fprintln(os.Stderr, "  -sql-file        SQL file to sync queries (default: [database_name].sql)")
 	fmt.Fprintln(os.Stderr, "  -format          Output format for pipe mode: table, csv, tsv (default: table)")
 }
 
@@ -600,4 +605,116 @@ func getDriverName(dbType string) string {
 	default:
 		return ""
 	}
+}
+
+// extractDatabaseName extracts the database/schema name from a DSN
+// Returns the database name if found, or a fallback based on dbType
+func extractDatabaseName(dsn, dbType string) string {
+	dbType = strings.ToLower(dbType)
+
+	switch dbType {
+	case "postgres", "postgresql", "pg":
+		// PostgreSQL URL format: postgres://user:pass@host:port/database?params
+		// or key=value format: host=localhost dbname=mydb
+		if strings.HasPrefix(strings.ToLower(dsn), "postgres://") ||
+			strings.HasPrefix(strings.ToLower(dsn), "postgresql://") {
+			// URL format - extract path component
+			// Remove query string first
+			dsnClean := dsn
+			if idx := strings.Index(dsnClean, "?"); idx != -1 {
+				dsnClean = dsnClean[:idx]
+			}
+			// Find the last /
+			if idx := strings.LastIndex(dsnClean, "/"); idx != -1 {
+				dbName := dsnClean[idx+1:]
+				if dbName != "" {
+					return sanitizeFilename(dbName)
+				}
+			}
+		} else if strings.Contains(dsn, "dbname=") {
+			// Key=value format
+			parts := strings.Fields(dsn)
+			for _, part := range parts {
+				if strings.HasPrefix(part, "dbname=") {
+					dbName := strings.TrimPrefix(part, "dbname=")
+					if dbName != "" {
+						return sanitizeFilename(dbName)
+					}
+				}
+			}
+		}
+		return "postgres"
+
+	case "mysql":
+		// MySQL format: user:pass@tcp(host:port)/database?params
+		// or user:pass@unix(/path/to/socket)/database
+		// Find the database name after the last /
+		dsnClean := dsn
+		if idx := strings.Index(dsnClean, "?"); idx != -1 {
+			dsnClean = dsnClean[:idx]
+		}
+		if idx := strings.LastIndex(dsnClean, "/"); idx != -1 {
+			dbName := dsnClean[idx+1:]
+			if dbName != "" {
+				return sanitizeFilename(dbName)
+			}
+		}
+		return "mysql"
+
+	case "sqlite", "sqlite3":
+		// SQLite: /path/to/file.db or :memory: or file:path?params
+		if dsn == ":memory:" {
+			return "memory"
+		}
+		dsnClean := dsn
+		// Remove file: prefix
+		dsnClean = strings.TrimPrefix(dsnClean, "file:")
+		// Remove query string
+		if idx := strings.Index(dsnClean, "?"); idx != -1 {
+			dsnClean = dsnClean[:idx]
+		}
+		// Get the base filename without extension
+		base := filepath.Base(dsnClean)
+		// Remove common extensions
+		for _, ext := range []string{".sqlite3", ".sqlite", ".db"} {
+			if strings.HasSuffix(strings.ToLower(base), ext) {
+				base = base[:len(base)-len(ext)]
+				break
+			}
+		}
+		if base != "" && base != "." {
+			return sanitizeFilename(base)
+		}
+		return "sqlite"
+	}
+
+	// Unknown type - use type name or fallback
+	if dbType != "" {
+		return dbType
+	}
+	return "dibber"
+}
+
+// sanitizeFilename removes or replaces characters that are problematic in filenames
+func sanitizeFilename(name string) string {
+	// Replace problematic characters with underscores
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+		" ", "_",
+	)
+	result := replacer.Replace(name)
+	// Remove leading/trailing underscores
+	result = strings.Trim(result, "_")
+	if result == "" {
+		return "dibber"
+	}
+	return result
 }
