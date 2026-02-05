@@ -410,20 +410,21 @@ The `production` theme uses aggressive red coloring throughout the UI. This make
 |-----|--------|
 | `Ctrl+T` | Open new tab (with connection picker) |
 | `Ctrl+Tab` | Switch to next tab |
-| `Ctrl+Shift+Tab` | Switch to previous tab |
+| `Ctrl+Shift+Tab` or `Shift+Tab` | Switch to previous tab |
 | `Ctrl+W` | Close current tab |
 | `Ctrl+E` | Open SQL file in external editor (`$EDITOR`) |
 | `Ctrl+O` | Open file dialog |
 | `Ctrl+P` | Open connection picker (switch databases for current tab) |
 | `Ctrl+S` | Save SQL file |
 | `Ctrl+Q` | Quit |
+| **Mouse click** | Click on tabs in the tab bar to switch |
 
 ### Tab Management
 
 Dibber supports multiple tabs, each with its own database connection, query editor, and results view.
 
 - **New Tab (`Ctrl+T`)**: Opens the connection picker to select a database for a new tab
-- **Switch Tabs (`Ctrl+Tab` / `Ctrl+Shift+Tab`)**: Cycles through open tabs (SQL is saved/reloaded automatically)
+- **Switch Tabs**: Use `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Shift+Tab`) to cycle through tabs, or **click on a tab** with your mouse
 - **Close Tab (`Ctrl+W`)**: Closes the current tab (cannot close the last tab)
 
 Each tab has its own:

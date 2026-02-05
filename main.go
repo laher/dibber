@@ -151,7 +151,7 @@ func main() {
 	// Get the theme
 	theme := GetTheme(connInfo.theme)
 
-	p := tea.NewProgram(NewModel(db, detectedType, resolvedSQLDir, resolvedSQLFile, initialSQL, vm, *connectionName, theme), tea.WithAltScreen())
+	p := tea.NewProgram(NewModel(db, detectedType, resolvedSQLDir, resolvedSQLFile, initialSQL, vm, *connectionName, theme), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
 		os.Exit(1)

@@ -210,7 +210,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Switch tabs - Ctrl+Tab or Ctrl+PageDown (next), Ctrl+Shift+Tab or Ctrl+PageUp (prev)
-		if msg.String() == "ctrl+tab" || msg.String() == "ctrl+pgdown" {
+		// Also support Shift+Tab for switching when in query/results view (not in detail view where it navigates fields)
+		nextTabKeys := msg.String() == "ctrl+tab" || msg.String() == "ctrl+pgdown"
+		prevTabKeys := msg.String() == "ctrl+shift+tab" || msg.String() == "ctrl+pgup"
+
+		// Allow shift+tab for tab switching only when not in detail view or other dialogs
+		if msg.String() == "shift+tab" && (m.focus == focusQuery || m.focus == focusResults) && len(m.tabs) > 1 {
+			prevTabKeys = true
+		}
+
+		if nextTabKeys {
 			if len(m.tabs) > 1 {
 				m.saveToFile() // Save current tab before switching
 				m.activeTab = (m.activeTab + 1) % len(m.tabs)
@@ -219,7 +228,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if msg.String() == "ctrl+shift+tab" || msg.String() == "ctrl+pgup" {
+		if prevTabKeys {
 			if len(m.tabs) > 1 {
 				m.saveToFile() // Save current tab before switching
 				m.activeTab = (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
@@ -423,6 +432,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				tab.detailView.visibleFields = 3
 			}
 		}
+
+	case tea.MouseMsg:
+		// Handle mouse clicks on tabs
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			// Check if click is on the tab bar (row 2, after title)
+			// Title is row 0-1, tab bar is row 2
+			if msg.Y == 2 && len(m.tabs) > 1 {
+				clickedTab := m.getTabAtPosition(msg.X)
+				if clickedTab >= 0 && clickedTab != m.activeTab && clickedTab < len(m.tabs) {
+					m.saveToFile() // Save current tab before switching
+					m.activeTab = clickedTab
+					m.reloadFileFromDisk() // Reload the new tab's file
+					m.statusMessage = fmt.Sprintf("Tab %d: %s", m.activeTab+1, m.tabDisplayName(m.activeTab))
+				}
+				return m, nil
+			}
+		}
 	}
 
 	// Update textarea if focused
@@ -448,6 +474,34 @@ func (m Model) tabDisplayName(idx int) string {
 		return tab.dbType
 	}
 	return "untitled"
+}
+
+// getTabAtPosition returns the tab index at the given X position, or -1 if none
+func (m Model) getTabAtPosition(x int) int {
+	if len(m.tabs) == 0 {
+		return -1
+	}
+
+	currentX := 0
+	for i := range m.tabs {
+		// Calculate tab label (same logic as renderTabBar)
+		label := m.tabDisplayName(i)
+		if len(label) > 15 {
+			label = label[:12] + "..."
+		}
+
+		// Tab label format: "N: label" with padding (0, 1) = 2 extra chars
+		tabLabel := fmt.Sprintf("%d: %s", i+1, label)
+		tabWidth := len(tabLabel) + 2 // +2 for padding
+
+		if x >= currentX && x < currentX+tabWidth {
+			return i
+		}
+
+		currentX += tabWidth + 1 // +1 for space between tabs
+	}
+
+	return -1
 }
 
 // closeCurrentTab closes the active tab
