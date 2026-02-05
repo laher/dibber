@@ -9,8 +9,12 @@ import (
 
 // openFileDialog opens the file selection dialog
 func (m *Model) openFileDialog() {
+	tab := m.activeTabPtr()
 	// Use the configured SQL directory
 	dir := m.sqlDir
+	if tab != nil && tab.sqlDir != "" {
+		dir = tab.sqlDir
+	}
 	if dir == "" {
 		// Fallback to current directory if sqlDir not set
 		var err error
@@ -69,6 +73,11 @@ func (m *Model) loadDirectoryIntoDialog(dir string) {
 
 // loadFile loads the selected SQL file into the textarea
 func (m *Model) loadFile(filename string) {
+	tab := m.activeTabPtr()
+	if tab == nil {
+		return
+	}
+
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		m.statusMessage = fmt.Sprintf("Error reading file: %v", err)
@@ -76,54 +85,65 @@ func (m *Model) loadFile(filename string) {
 	}
 
 	content := string(data)
-	m.textarea.SetValue(content)
-	m.sqlFile = filename
-	m.lastSavedContent = content
+	tab.textarea.SetValue(content)
+	tab.sqlFile = filename
+	tab.lastSavedContent = content
 	m.statusMessage = fmt.Sprintf("Opened %s", filename)
 
 	// Clear any existing results
-	m.result = nil
-	m.queryMeta = nil
+	tab.result = nil
+	tab.queryMeta = nil
 }
 
 // saveToFile saves the current textarea content to the SQL file
 func (m *Model) saveToFile() {
-	if m.sqlFile == "" {
+	tab := m.activeTabPtr()
+	if tab == nil || tab.sqlFile == "" {
 		return
 	}
-	content := m.textarea.Value()
+	content := tab.textarea.Value()
 	// Write file, ignoring errors (we don't want to crash on save failure)
-	if err := os.WriteFile(m.sqlFile, []byte(content), 0644); err == nil {
-		m.lastSavedContent = content
+	if err := os.WriteFile(tab.sqlFile, []byte(content), 0644); err == nil {
+		tab.lastSavedContent = content
 	}
 }
 
 // reloadFileFromDisk reloads the SQL file from disk into the textarea
 func (m *Model) reloadFileFromDisk() {
-	if m.sqlFile == "" {
+	tab := m.activeTabPtr()
+	if tab == nil || tab.sqlFile == "" {
 		return
 	}
 
-	data, err := os.ReadFile(m.sqlFile)
+	data, err := os.ReadFile(tab.sqlFile)
 	if err != nil {
 		m.statusMessage = fmt.Sprintf("Error reloading file: %v", err)
 		return
 	}
 
 	content := string(data)
-	m.textarea.SetValue(content)
-	m.lastSavedContent = content
-	m.statusMessage = fmt.Sprintf("Reloaded %s", m.sqlFile)
+	tab.textarea.SetValue(content)
+	tab.lastSavedContent = content
+	m.statusMessage = fmt.Sprintf("Reloaded %s", tab.sqlFile)
 }
 
-// hasUnsavedChanges returns true if the textarea content differs from the last saved content
+// hasUnsavedChanges returns true if the active tab's textarea content differs from the last saved content
 func (m Model) hasUnsavedChanges() bool {
-	return m.textarea.Value() != m.lastSavedContent
+	tab := m.tab()
+	if tab == nil {
+		return false
+	}
+	return tab.textarea.Value() != tab.lastSavedContent
 }
 
 // appendQueryToTextarea appends a SQL statement to the textarea and moves cursor to end
 func (m *Model) appendQueryToTextarea(sql string) {
-	current := m.textarea.Value()
+	tab := m.activeTabPtr()
+	if tab == nil {
+		return
+	}
+
+	current := tab.textarea.Value()
 	var newContent string
 
 	if strings.TrimSpace(current) == "" {
@@ -137,15 +157,15 @@ func (m *Model) appendQueryToTextarea(sql string) {
 		newContent = current + "\n\n" + sql + ";"
 	}
 
-	m.textarea.SetValue(newContent)
+	tab.textarea.SetValue(newContent)
 
 	// Navigate to the last line, then to the end of that line
 	// This ensures the textarea scrolls to show the new content
-	totalLines := m.textarea.LineCount()
+	totalLines := tab.textarea.LineCount()
 	for i := 0; i < totalLines; i++ {
-		m.textarea.CursorDown()
+		tab.textarea.CursorDown()
 	}
-	m.textarea.CursorEnd()
+	tab.textarea.CursorEnd()
 
 	// Save to file
 	m.saveToFile()

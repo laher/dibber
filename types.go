@@ -1,6 +1,11 @@
 package main
 
-import "github.com/charmbracelet/bubbles/textinput"
+import (
+	"database/sql"
+
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+)
 
 // Focus states
 type focusState int
@@ -12,7 +17,39 @@ const (
 	focusFileDialog
 	focusConnectionPicker
 	focusPasswordPrompt
+	focusNewTabPicker // when selecting a connection for a new tab
 )
+
+// Tab represents a single database connection tab with its own query and results
+type Tab struct {
+	// Connection state
+	db             *sql.DB
+	dbType         string
+	connectionName string
+
+	// SQL file state
+	sqlDir           string
+	sqlFile          string
+	lastSavedContent string
+
+	// Query UI state
+	textarea  textarea.Model
+	result    *QueryResult
+	queryMeta *QueryMeta
+	lastQuery string
+
+	// Results navigation
+	selectedRow int
+	currentPage int
+	totalPages  int
+
+	// Theming (per-tab based on connection)
+	theme       Theme
+	highlighter *SQLHighlighter
+
+	// Detail view (per-tab)
+	detailView *DetailView
+}
 
 // ColumnType represents the general category of a database column type
 type ColumnType string

@@ -137,7 +137,12 @@ var (
 			Padding(0, 1)
 )
 
-// GetStyles returns the ThemedStyles for the model
+// GetStyles returns the ThemedStyles for the model (using active tab's theme)
 func (m Model) GetStyles() ThemedStyles {
-	return NewThemedStyles(m.theme)
+	tab := m.tab()
+	if tab != nil {
+		return NewThemedStyles(tab.theme)
+	}
+	// Fallback to default theme
+	return NewThemedStyles(DefaultTheme)
 }

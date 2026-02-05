@@ -46,23 +46,27 @@ func (m Model) handleFileDialogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleDetailViewKeys handles key events in the detail view
 func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+	tab := m.activeTabPtr()
+	if tab == nil || tab.detailView == nil {
+		return m, nil
+	}
 
 	switch msg.String() {
 	case "esc":
 		// Close detail view, go back to results
 		m.focus = focusResults
-		m.detailView = nil
+		tab.detailView = nil
 		return m, nil
 
 	case "f5", "ctrl+u":
 		// Generate UPDATE and append to query window
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 			updateSQL := m.generateUpdateSQL()
 			if updateSQL != "" {
 				m.appendQueryToTextarea(updateSQL)
 				m.focus = focusQuery
-				m.textarea.Focus()
-				m.detailView = nil
+				tab.textarea.Focus()
+				tab.detailView = nil
 				m.statusMessage = "UPDATE statement appended. Press Ctrl+R to execute."
 				return m, nil
 			}
@@ -72,13 +76,13 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "f6", "ctrl+d":
 		// Generate DELETE and append to query window
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 			deleteSQL := m.generateDeleteSQL()
 			if deleteSQL != "" {
 				m.appendQueryToTextarea(deleteSQL)
 				m.focus = focusQuery
-				m.textarea.Focus()
-				m.detailView = nil
+				tab.textarea.Focus()
+				tab.detailView = nil
 				m.statusMessage = "DELETE statement appended. Press Ctrl+R to execute."
 				return m, nil
 			}
@@ -87,13 +91,13 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "f7", "ctrl+i":
 		// Generate INSERT and append to query window
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 			insertSQL := m.generateInsertSQL()
 			if insertSQL != "" {
 				m.appendQueryToTextarea(insertSQL)
 				m.focus = focusQuery
-				m.textarea.Focus()
-				m.detailView = nil
+				tab.textarea.Focus()
+				tab.detailView = nil
 				m.statusMessage = "INSERT statement appended. Press Ctrl+R to execute."
 				return m, nil
 			}
@@ -102,12 +106,12 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+n":
 		// Toggle NULL state for focused field
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
-			idx := m.detailView.focusedField
-			m.detailView.isNull[idx] = !m.detailView.isNull[idx]
-			if m.detailView.isNull[idx] {
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
+			idx := tab.detailView.focusedField
+			tab.detailView.isNull[idx] = !tab.detailView.isNull[idx]
+			if tab.detailView.isNull[idx] {
 				// Clear the input when setting to NULL
-				m.detailView.inputs[idx].SetValue("")
+				tab.detailView.inputs[idx].SetValue("")
 				m.statusMessage = "Field set to NULL"
 			} else {
 				m.statusMessage = "Field set to non-NULL (empty string)"
@@ -116,66 +120,66 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "up", "shift+tab":
-		if m.detailView.focusedField > 0 {
-			m.detailView.inputs[m.detailView.focusedField].Blur()
-			m.detailView.focusedField--
-			m.detailView.contentScrollOffset = 0 // Reset content scroll when changing fields
-			m.detailView.inputs[m.detailView.focusedField].Focus()
+		if tab.detailView.focusedField > 0 {
+			tab.detailView.inputs[tab.detailView.focusedField].Blur()
+			tab.detailView.focusedField--
+			tab.detailView.contentScrollOffset = 0 // Reset content scroll when changing fields
+			tab.detailView.inputs[tab.detailView.focusedField].Focus()
 			// Adjust scroll if needed
-			if m.detailView.focusedField < m.detailView.scrollOffset {
-				m.detailView.scrollOffset = m.detailView.focusedField
+			if tab.detailView.focusedField < tab.detailView.scrollOffset {
+				tab.detailView.scrollOffset = tab.detailView.focusedField
 			}
 		}
 		return m, nil
 
 	case "down", "tab":
-		if m.detailView.focusedField < len(m.detailView.inputs)-1 {
-			m.detailView.inputs[m.detailView.focusedField].Blur()
-			m.detailView.focusedField++
-			m.detailView.contentScrollOffset = 0 // Reset content scroll when changing fields
-			m.detailView.inputs[m.detailView.focusedField].Focus()
+		if tab.detailView.focusedField < len(tab.detailView.inputs)-1 {
+			tab.detailView.inputs[tab.detailView.focusedField].Blur()
+			tab.detailView.focusedField++
+			tab.detailView.contentScrollOffset = 0 // Reset content scroll when changing fields
+			tab.detailView.inputs[tab.detailView.focusedField].Focus()
 			// Adjust scroll if needed
-			if m.detailView.focusedField >= m.detailView.scrollOffset+m.detailView.visibleFields {
-				m.detailView.scrollOffset = m.detailView.focusedField - m.detailView.visibleFields + 1
+			if tab.detailView.focusedField >= tab.detailView.scrollOffset+tab.detailView.visibleFields {
+				tab.detailView.scrollOffset = tab.detailView.focusedField - tab.detailView.visibleFields + 1
 			}
 		}
 		return m, nil
 
 	case "pgdown":
 		// Scroll down within multi-line content
-		origVal := m.detailView.originalValues[m.detailView.focusedField]
+		origVal := tab.detailView.originalValues[tab.detailView.focusedField]
 		if !origVal.IsNull && strings.Contains(origVal.Value, "\n") {
 			lines := strings.Split(origVal.Value, "\n")
 			maxScroll := len(lines) - 10 // Keep at least 10 lines visible
 			if maxScroll < 0 {
 				maxScroll = 0
 			}
-			m.detailView.contentScrollOffset += 10
-			if m.detailView.contentScrollOffset > maxScroll {
-				m.detailView.contentScrollOffset = maxScroll
+			tab.detailView.contentScrollOffset += 10
+			if tab.detailView.contentScrollOffset > maxScroll {
+				tab.detailView.contentScrollOffset = maxScroll
 			}
 		}
 		return m, nil
 
 	case "pgup":
 		// Scroll up within multi-line content
-		m.detailView.contentScrollOffset -= 10
-		if m.detailView.contentScrollOffset < 0 {
-			m.detailView.contentScrollOffset = 0
+		tab.detailView.contentScrollOffset -= 10
+		if tab.detailView.contentScrollOffset < 0 {
+			tab.detailView.contentScrollOffset = 0
 		}
 		return m, nil
 
 	default:
 		// Update the focused input
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
-			idx := m.detailView.focusedField
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
+			idx := tab.detailView.focusedField
 			var cmd tea.Cmd
-			m.detailView.inputs[idx], cmd = m.detailView.inputs[idx].Update(msg)
+			tab.detailView.inputs[idx], cmd = tab.detailView.inputs[idx].Update(msg)
 			cmds = append(cmds, cmd)
 
 			// If user types in a NULL field, automatically make it non-NULL
-			if m.detailView.isNull[idx] && m.detailView.inputs[idx].Value() != "" {
-				m.detailView.isNull[idx] = false
+			if tab.detailView.isNull[idx] && tab.detailView.inputs[idx].Value() != "" {
+				tab.detailView.isNull[idx] = false
 			}
 		}
 		return m, tea.Batch(cmds...)
@@ -184,49 +188,54 @@ func (m Model) handleDetailViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleResultsNavigation handles navigation keys in the results view
 func (m Model) handleResultsNavigation(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	tab := m.activeTabPtr()
+	if tab == nil || tab.result == nil {
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "up", "k":
-		if m.selectedRow > 0 {
-			m.selectedRow--
+		if tab.selectedRow > 0 {
+			tab.selectedRow--
 			// Check if we need to go to previous page
-			if m.selectedRow < m.currentPage*pageSize {
-				m.currentPage--
+			if tab.selectedRow < tab.currentPage*pageSize {
+				tab.currentPage--
 			}
 		}
 		return m, nil
 
 	case "down", "j":
-		if m.selectedRow < len(m.result.Rows)-1 {
-			m.selectedRow++
+		if tab.selectedRow < len(tab.result.Rows)-1 {
+			tab.selectedRow++
 			// Check if we need to go to next page
-			if m.selectedRow >= (m.currentPage+1)*pageSize {
-				m.currentPage++
+			if tab.selectedRow >= (tab.currentPage+1)*pageSize {
+				tab.currentPage++
 			}
 		}
 		return m, nil
 
 	case "pgup", "ctrl+u":
-		if m.currentPage > 0 {
-			m.currentPage--
-			m.selectedRow = m.currentPage * pageSize
+		if tab.currentPage > 0 {
+			tab.currentPage--
+			tab.selectedRow = tab.currentPage * pageSize
 		}
 		return m, nil
 
 	case "pgdown", "ctrl+d":
-		if m.currentPage < m.totalPages-1 {
-			m.currentPage++
-			m.selectedRow = m.currentPage * pageSize
+		if tab.currentPage < tab.totalPages-1 {
+			tab.currentPage++
+			tab.selectedRow = tab.currentPage * pageSize
 		}
 		return m, nil
 
 	case "home", "g":
-		m.currentPage = 0
-		m.selectedRow = 0
+		tab.currentPage = 0
+		tab.selectedRow = 0
 		return m, nil
 
 	case "end", "G":
-		m.currentPage = m.totalPages - 1
-		m.selectedRow = len(m.result.Rows) - 1
+		tab.currentPage = tab.totalPages - 1
+		tab.selectedRow = len(tab.result.Rows) - 1
 		return m, nil
 	}
 
@@ -370,19 +379,41 @@ func (m Model) handleUnlockMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleListMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		m.creatingNewTab = false
 		return m.closeConnectionPicker("Closed")
 	case "enter":
-		// Switch to selected connection
+		// Switch to selected connection or create new tab
 		if len(m.connectionPicker.connections) > 0 {
 			selectedName := m.connectionPicker.connections[m.connectionPicker.selectedIdx]
-			if err := m.switchConnection(selectedName); err != nil {
-				m.connectionPicker.errorMessage = err.Error()
-				return m, nil
+
+			if m.creatingNewTab {
+				// Create a new tab with this connection
+				if err := m.createNewTab(selectedName); err != nil {
+					m.connectionPicker.errorMessage = err.Error()
+					return m, nil
+				}
+				m.focus = focusQuery
+				m.connectionPicker = nil
+				m.creatingNewTab = false
+				tab := m.activeTabPtr()
+				if tab != nil {
+					tab.textarea.Focus()
+				}
+				m.statusMessage = "New tab created: " + selectedName
+			} else {
+				// Switch current tab's connection
+				if err := m.switchConnection(selectedName); err != nil {
+					m.connectionPicker.errorMessage = err.Error()
+					return m, nil
+				}
+				m.focus = focusQuery
+				m.connectionPicker = nil
+				m.statusMessage = "Switched to: " + selectedName
+				tab := m.activeTabPtr()
+				if tab != nil {
+					tab.textarea.Focus()
+				}
 			}
-			m.focus = focusQuery
-			m.connectionPicker = nil
-			m.statusMessage = "Switched to: " + selectedName
-			m.textarea.Focus()
 		}
 		return m, nil
 	case "a", "n":
@@ -687,7 +718,11 @@ func (m Model) handleConfirmDeleteMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) closeConnectionPicker(message string) (tea.Model, tea.Cmd) {
 	m.focus = focusQuery
 	m.connectionPicker = nil
+	m.creatingNewTab = false
 	m.statusMessage = message
-	m.textarea.Focus()
+	tab := m.activeTabPtr()
+	if tab != nil {
+		tab.textarea.Focus()
+	}
 	return m, nil
 }

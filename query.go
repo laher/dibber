@@ -248,13 +248,18 @@ func extractTableName(tablePart string) string {
 
 // getQueryUnderCursor finds and returns the SQL query that contains the cursor position
 func (m Model) getQueryUnderCursor() string {
-	content := m.textarea.Value()
+	tab := m.tab()
+	if tab == nil {
+		return ""
+	}
+
+	content := tab.textarea.Value()
 	if strings.TrimSpace(content) == "" {
 		return ""
 	}
 
 	// Get cursor line (0-indexed)
-	cursorLine := m.textarea.Line()
+	cursorLine := tab.textarea.Line()
 
 	// Split content into lines and find which query block the cursor is in
 	lines := strings.Split(content, "\n")
@@ -421,25 +426,26 @@ func isValidNumber(s string) bool {
 
 // generateUpdateSQL creates an UPDATE statement from the edited fields
 func (m Model) generateUpdateSQL() string {
-	if m.detailView == nil || m.queryMeta == nil || !m.queryMeta.IsEditable {
+	tab := m.tab()
+	if tab == nil || tab.detailView == nil || tab.queryMeta == nil || !tab.queryMeta.IsEditable {
 		return ""
 	}
 
-	q := quoteIdentifier(m.dbType)
+	q := quoteIdentifier(tab.dbType)
 
 	var setClauses []string
-	for i, input := range m.detailView.inputs {
+	for i, input := range tab.detailView.inputs {
 		newVal := input.Value()
-		newIsNull := m.detailView.isNull[i]
-		origVal := m.detailView.originalValues[i]
+		newIsNull := tab.detailView.isNull[i]
+		origVal := tab.detailView.originalValues[i]
 
 		// Check if value has changed (compare both value and NULL state)
 		valueChanged := newVal != origVal.Value || newIsNull != origVal.IsNull
 
 		if valueChanged {
-			colName := m.result.Columns[i]
-			colType := m.detailView.columnTypes[i]
-			formattedVal := formatValueForSQL(newVal, newIsNull, colType, m.dbType)
+			colName := tab.result.Columns[i]
+			colType := tab.detailView.columnTypes[i]
+			formattedVal := formatValueForSQL(newVal, newIsNull, colType, tab.dbType)
 			setClauses = append(setClauses, fmt.Sprintf("%s%s%s = %s", q, colName, q, formattedVal))
 		}
 	}
@@ -449,64 +455,66 @@ func (m Model) generateUpdateSQL() string {
 	}
 
 	// Get the ID value (use original, never NULL for WHERE clause)
-	idVal := m.detailView.originalValues[m.queryMeta.IDIndex]
-	idColType := m.detailView.columnTypes[m.queryMeta.IDIndex]
-	formattedID := formatValueForSQL(idVal.Value, false, idColType, m.dbType)
+	idVal := tab.detailView.originalValues[tab.queryMeta.IDIndex]
+	idColType := tab.detailView.columnTypes[tab.queryMeta.IDIndex]
+	formattedID := formatValueForSQL(idVal.Value, false, idColType, tab.dbType)
 
 	return fmt.Sprintf("UPDATE %s%s%s SET %s WHERE %s%s%s = %s",
-		q, m.queryMeta.TableName, q,
+		q, tab.queryMeta.TableName, q,
 		strings.Join(setClauses, ", "),
-		q, m.queryMeta.IDColumn, q,
+		q, tab.queryMeta.IDColumn, q,
 		formattedID)
 }
 
 // generateDeleteSQL creates a DELETE statement for the current row
 func (m Model) generateDeleteSQL() string {
-	if m.detailView == nil || m.queryMeta == nil || !m.queryMeta.IsEditable {
+	tab := m.tab()
+	if tab == nil || tab.detailView == nil || tab.queryMeta == nil || !tab.queryMeta.IsEditable {
 		return ""
 	}
 
-	q := quoteIdentifier(m.dbType)
+	q := quoteIdentifier(tab.dbType)
 
 	// Get the ID value
-	idVal := m.detailView.originalValues[m.queryMeta.IDIndex]
-	idColType := m.detailView.columnTypes[m.queryMeta.IDIndex]
-	formattedID := formatValueForSQL(idVal.Value, false, idColType, m.dbType)
+	idVal := tab.detailView.originalValues[tab.queryMeta.IDIndex]
+	idColType := tab.detailView.columnTypes[tab.queryMeta.IDIndex]
+	formattedID := formatValueForSQL(idVal.Value, false, idColType, tab.dbType)
 
 	return fmt.Sprintf("DELETE FROM %s%s%s WHERE %s%s%s = %s",
-		q, m.queryMeta.TableName, q,
-		q, m.queryMeta.IDColumn, q,
+		q, tab.queryMeta.TableName, q,
+		q, tab.queryMeta.IDColumn, q,
 		formattedID)
 }
 
 // generateInsertSQL creates an INSERT statement from the current field values
 func (m Model) generateInsertSQL() string {
-	if m.detailView == nil || m.queryMeta == nil || !m.queryMeta.IsEditable {
+	tab := m.tab()
+	if tab == nil || tab.detailView == nil || tab.queryMeta == nil || !tab.queryMeta.IsEditable {
 		return ""
 	}
 
-	q := quoteIdentifier(m.dbType)
+	q := quoteIdentifier(tab.dbType)
 
 	var columns []string
 	var values []string
 
-	for i, input := range m.detailView.inputs {
+	for i, input := range tab.detailView.inputs {
 		// Skip the ID column for INSERT (let the database auto-generate it)
-		if i == m.queryMeta.IDIndex {
+		if i == tab.queryMeta.IDIndex {
 			continue
 		}
 
-		colName := m.result.Columns[i]
+		colName := tab.result.Columns[i]
 		val := input.Value()
-		isNull := m.detailView.isNull[i]
-		colType := m.detailView.columnTypes[i]
+		isNull := tab.detailView.isNull[i]
+		colType := tab.detailView.columnTypes[i]
 
 		columns = append(columns, fmt.Sprintf("%s%s%s", q, colName, q))
-		values = append(values, formatValueForSQL(val, isNull, colType, m.dbType))
+		values = append(values, formatValueForSQL(val, isNull, colType, tab.dbType))
 	}
 
 	return fmt.Sprintf("INSERT INTO %s%s%s (%s) VALUES (%s)",
-		q, m.queryMeta.TableName, q,
+		q, tab.queryMeta.TableName, q,
 		strings.Join(columns, ", "),
 		strings.Join(values, ", "))
 }

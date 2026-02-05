@@ -10,6 +10,10 @@ import (
 // renderDetailView renders the detail/edit view for a row
 func (m Model) renderDetailView() string {
 	styles := m.GetStyles()
+	tab := m.tab()
+	if tab == nil || tab.detailView == nil {
+		return ""
+	}
 
 	// Calculate heights
 	// Title: 1 line + 1 blank = 2
@@ -28,47 +32,47 @@ func (m Model) renderDetailView() string {
 
 	// Update visible fields based on available height
 	// Each field takes ~2 lines (label + input with border)
-	m.detailView.visibleFields = contentHeight / 2
-	if m.detailView.visibleFields < 3 {
-		m.detailView.visibleFields = 3
+	tab.detailView.visibleFields = contentHeight / 2
+	if tab.detailView.visibleFields < 3 {
+		tab.detailView.visibleFields = 3
 	}
-	if m.detailView.visibleFields > len(m.result.Columns) {
-		m.detailView.visibleFields = len(m.result.Columns)
+	if tab.detailView.visibleFields > len(tab.result.Columns) {
+		tab.detailView.visibleFields = len(tab.result.Columns)
 	}
 
 	var b strings.Builder
 
 	// Title
 	titleText := "🌱  Dibber - Database Client"
-	if m.connectionName != "" {
-		titleText = fmt.Sprintf("🌱  Dibber - %s (%s)", m.connectionName, m.dbType)
+	if tab.connectionName != "" {
+		titleText = fmt.Sprintf("🌱  Dibber - %s (%s)", tab.connectionName, tab.dbType)
 	}
 	b.WriteString(styles.Title.Render(titleText))
 	b.WriteString("\n\n")
 
 	// Detail view header
 	editableStatus := ""
-	if m.queryMeta != nil && m.queryMeta.IsEditable {
+	if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 		editableStatus = styles.EditableBadge.Render(" [EDITABLE]")
 	} else {
 		editableStatus = styles.ReadOnlyBadge.Render(" [READ-ONLY]")
 	}
-	b.WriteString(styles.DetailTitle.Render(fmt.Sprintf("Row Detail - Row %d%s", m.detailView.rowIndex+1, editableStatus)))
+	b.WriteString(styles.DetailTitle.Render(fmt.Sprintf("Row Detail - Row %d%s", tab.detailView.rowIndex+1, editableStatus)))
 	b.WriteString("\n\n")
 
 	// Fields
-	endIdx := m.detailView.scrollOffset + m.detailView.visibleFields
-	if endIdx > len(m.result.Columns) {
-		endIdx = len(m.result.Columns)
+	endIdx := tab.detailView.scrollOffset + tab.detailView.visibleFields
+	if endIdx > len(tab.result.Columns) {
+		endIdx = len(tab.result.Columns)
 	}
 
 	linesWritten := 0
 	maxValueLines := 15 // Max lines to show for multi-line values
-	for i := m.detailView.scrollOffset; i < endIdx; i++ {
-		colName := m.result.Columns[i]
-		colType := m.detailView.columnTypes[i]
-		isNull := m.detailView.isNull[i]
-		isFocused := i == m.detailView.focusedField
+	for i := tab.detailView.scrollOffset; i < endIdx; i++ {
+		colName := tab.result.Columns[i]
+		colType := tab.detailView.columnTypes[i]
+		isNull := tab.detailView.isNull[i]
+		isFocused := i == tab.detailView.focusedField
 
 		// Build label with type indicator and NULL badge
 		labelText := colName + ":"
@@ -82,7 +86,7 @@ func (m Model) renderDetailView() string {
 
 		// Add type indicator for editable fields
 		typeIndicator := ""
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 			switch colType {
 			case ColTypeNumeric:
 				typeIndicator = styles.Help.Render(" #")
@@ -91,22 +95,22 @@ func (m Model) renderDetailView() string {
 			}
 		}
 
-		if m.queryMeta != nil && m.queryMeta.IsEditable {
+		if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 			// Editable field
 			if isNull {
 				// Show NULL placeholder instead of input
 				nullDisplay := styles.NullValue.Render("<NULL>")
 				if isFocused {
 					nullDisplay = lipgloss.NewStyle().
-						Foreground(m.theme.SyntaxNull).
-						Background(m.theme.Secondary).
+						Foreground(tab.theme.SyntaxNull).
+						Background(tab.theme.Secondary).
 						Bold(true).
 						Render("<NULL>")
 				}
 				b.WriteString(fmt.Sprintf("%s%s%s %s\n", label, typeIndicator, nullBadge, nullDisplay))
 			} else {
-				inputView := m.detailView.inputs[i].View()
-				inputVal := m.detailView.inputs[i].Value()
+				inputView := tab.detailView.inputs[i].View()
+				inputVal := tab.detailView.inputs[i].Value()
 
 				// Show empty string indicator
 				if inputVal == "" {
@@ -128,15 +132,15 @@ func (m Model) renderDetailView() string {
 			linesWritten++
 		} else {
 			// Read-only field - handle multi-line content
-			origVal := m.detailView.originalValues[i]
+			origVal := tab.detailView.originalValues[i]
 
 			if origVal.IsNull {
 				// NULL value
 				nullDisplay := styles.NullValue.Render("<NULL>")
 				if isFocused {
 					nullDisplay = lipgloss.NewStyle().
-						Foreground(m.theme.SyntaxNull).
-						Background(m.theme.Secondary).
+						Foreground(tab.theme.SyntaxNull).
+						Background(tab.theme.Secondary).
 						Bold(true).
 						Render("<NULL>")
 				}
@@ -154,7 +158,7 @@ func (m Model) renderDetailView() string {
 				// Apply content scroll offset for focused field
 				scrollOffset := 0
 				if isFocused {
-					scrollOffset = m.detailView.contentScrollOffset
+					scrollOffset = tab.detailView.contentScrollOffset
 					if scrollOffset > len(lines) {
 						scrollOffset = 0
 					}
@@ -176,13 +180,13 @@ func (m Model) renderDetailView() string {
 
 				// Style for the code block
 				blockStyle := lipgloss.NewStyle().
-					Foreground(m.theme.SyntaxString).
+					Foreground(tab.theme.SyntaxString).
 					PaddingLeft(2)
 
 				if isFocused {
 					blockStyle = blockStyle.
-						Background(m.theme.Secondary).
-						Foreground(m.theme.Warning)
+						Background(tab.theme.Secondary).
+						Foreground(tab.theme.Warning)
 				}
 
 				for _, line := range displayLines {
@@ -223,8 +227,8 @@ func (m Model) renderDetailView() string {
 					style := styles.EmptyString
 					if isFocused {
 						style = lipgloss.NewStyle().
-							Foreground(m.theme.TextDim).
-							Background(m.theme.Secondary).
+							Foreground(tab.theme.TextDim).
+							Background(tab.theme.Secondary).
 							Italic(true)
 					}
 					b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
@@ -250,7 +254,7 @@ func (m Model) renderDetailView() string {
 					}
 
 					if isFocused {
-						style = style.Background(m.theme.Secondary)
+						style = style.Background(tab.theme.Secondary)
 					}
 					b.WriteString(fmt.Sprintf("%s %s\n", label, style.Render(displayVal)))
 				}
@@ -261,9 +265,9 @@ func (m Model) renderDetailView() string {
 
 	// Scroll indicator
 	scrollIndicatorLines := 0
-	if len(m.result.Columns) > m.detailView.visibleFields {
+	if len(tab.result.Columns) > tab.detailView.visibleFields {
 		b.WriteString(fmt.Sprintf("\n  (Showing fields %d-%d of %d)\n",
-			m.detailView.scrollOffset+1, endIdx, len(m.result.Columns)))
+			tab.detailView.scrollOffset+1, endIdx, len(tab.result.Columns)))
 		scrollIndicatorLines = 2
 	}
 
@@ -279,7 +283,7 @@ func (m Model) renderDetailView() string {
 
 	// Help
 	var helpText string
-	if m.queryMeta != nil && m.queryMeta.IsEditable {
+	if tab.queryMeta != nil && tab.queryMeta.IsEditable {
 		helpText = "↑↓: Navigate | Ctrl+N: Toggle NULL | Ctrl+U/D/I: UPDATE/DELETE/INSERT | Esc: Back"
 	} else {
 		helpText = "↑↓/Tab: Navigate fields | PgUp/PgDn: Scroll content | Esc: Back | Ctrl+Q: Quit"

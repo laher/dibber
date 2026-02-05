@@ -14,6 +14,7 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), dibber prov
 ## Features
 
 - **Interactive SQL Editor**: Write and execute SQL queries with a full-featured text area
+- **Multiple Tabs**: Open multiple database connections simultaneously, each with its own query and results
 - **External Editor Integration**: Press `Ctrl+E` to edit SQL in your preferred `$EDITOR` (vim, VS Code, etc.)
 - **Results Table**: View query results in a paginated, navigable table
 - **Saved Connections**: Store database connections **securely with encryption**
@@ -407,11 +408,30 @@ The `production` theme uses aggressive red coloring throughout the UI. This make
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+T` | Open new tab (with connection picker) |
+| `Ctrl+Tab` | Switch to next tab |
+| `Ctrl+Shift+Tab` | Switch to previous tab |
+| `Ctrl+W` | Close current tab |
 | `Ctrl+E` | Open SQL file in external editor (`$EDITOR`) |
 | `Ctrl+O` | Open file dialog |
-| `Ctrl+P` | Open connection picker (switch databases) |
+| `Ctrl+P` | Open connection picker (switch databases for current tab) |
 | `Ctrl+S` | Save SQL file |
 | `Ctrl+Q` | Quit |
+
+### Tab Management
+
+Dibber supports multiple tabs, each with its own database connection, query editor, and results view.
+
+- **New Tab (`Ctrl+T`)**: Opens the connection picker to select a database for a new tab
+- **Switch Tabs (`Ctrl+Tab` / `Ctrl+Shift+Tab`)**: Cycles through open tabs (SQL is saved/reloaded automatically)
+- **Close Tab (`Ctrl+W`)**: Closes the current tab (cannot close the last tab)
+
+Each tab has its own:
+- Database connection
+- SQL file (based on database name)
+- Query editor state
+- Results and pagination
+- Theme (from connection settings)
 
 ### Query View
 
@@ -539,19 +559,24 @@ It's also a somewhat childish soundalike for "d-b" (database).
 
 - [x] Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it (and therefore, no need for entering encryption password)
 - [x] Pipe mode - support multiple queries from stdin.
-- [ ] Different default file per named connection? configurable (so that connections can share if needed)
-- [ ] Tabs for multiple connections (note: should we share query window in some cases?)
+- [x] Different default file per named connection? configurable (so that connections can share if needed)
+- [x] Tabs for multiple connections (Ctrl+T to create, Ctrl+Tab to switch, Ctrl+W to close)
 - [ ] Refine the concept of 'modal editor' - <Esc> to go to results view, providing more key mappings (without <Ctrl>) while in results view.
 - [ ] Menus
 - [ ] feature - 'rollover' sql file to back up sql file and clear it
-- [ ] Improve cursor - support multiline selection in editor
-- [ ] formatting, linting, error-checking SQL
-- [ ] Defer to external app for encryption password? e.g. pass, op,
-(1password), etc
+- [x] Improve cursor -
+  - ~~- [ ] support multiline selection in editor~~ (cancelled bc bubbletea's text area doesn't support multiline selection,
+and implementing it would be a major project in itself)
+  - [x] open external editor instead
+  - [ ] external editor for blob fields (json, text, etc)
 - [ ] Export results to csv/table/tsv. Maybe json,yaml too?
 
 ### Later (after 0.0.1)
 
+- [ ] Create charts from aggregations?
+- [ ] formatting, linting, error-checking SQL
+- [ ] Defer to external app for encryption password? e.g. pass, op,
+(1password), etc
 - [ ] Autocompletion of SQL keywords.
   - [ ] and [maybe] table/column names
 - [ ] docker-based tests for different dbs?

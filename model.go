@@ -19,40 +19,31 @@ const (
 
 // Model is the main Bubble Tea model
 type Model struct {
-	db               *sql.DB
-	dbType           string
-	sqlDir           string // directory for SQL files
-	sqlFile          string
-	lastSavedContent string
-	confirmingQuit   bool
-	textarea         textarea.Model
-	viewport         viewport.Model
-	focus            focusState
-	result           *QueryResult
-	queryMeta        *QueryMeta
-	lastQuery        string
-	selectedRow      int
-	currentPage      int
-	totalPages       int
-	width            int
-	height           int
-	ready            bool
-	statusMessage    string
-	detailView       *DetailView
-	fileDialog       *FileDialog
+	// Tab management
+	tabs      []*Tab
+	activeTab int
+
+	// Global UI state
+	confirmingQuit bool
+	viewport       viewport.Model
+	focus          focusState
+	width          int
+	height         int
+	ready          bool
+	statusMessage  string
+	fileDialog     *FileDialog
 
 	// Connection management
 	vaultManager     *VaultManager
-	connectionName   string            // current connection name (if using saved connection)
 	connectionPicker *ConnectionPicker // for interactive connection switching
+	creatingNewTab   bool              // true when connection picker is for new tab
 
-	// Theming
-	theme       Theme           // current theme
-	highlighter *SQLHighlighter // SQL syntax highlighter
+	// SQL directory (global default)
+	sqlDir string
 }
 
-// NewModel creates a new Model
-func NewModel(db *sql.DB, dbType string, sqlDir string, sqlFile string, initialSQL string, vm *VaultManager, connectionName string, theme Theme) Model {
+// NewTab creates a new Tab with the given connection
+func NewTab(db *sql.DB, dbType string, sqlDir string, sqlFile string, initialSQL string, connectionName string, theme Theme) *Tab {
 	ta := textarea.New()
 	ta.Placeholder = "Enter SQL query..."
 	ta.Focus()
@@ -66,19 +57,46 @@ func NewModel(db *sql.DB, dbType string, sqlDir string, sqlFile string, initialS
 		ta.SetValue(initialSQL)
 	}
 
-	return Model{
+	return &Tab{
 		db:               db,
 		dbType:           dbType,
 		sqlDir:           sqlDir,
 		sqlFile:          sqlFile,
 		lastSavedContent: initialSQL,
 		textarea:         ta,
-		focus:            focusQuery,
-		vaultManager:     vm,
 		connectionName:   connectionName,
 		theme:            theme,
 		highlighter:      NewSQLHighlighter(theme),
 	}
+}
+
+// NewModel creates a new Model with a single initial tab
+func NewModel(db *sql.DB, dbType string, sqlDir string, sqlFile string, initialSQL string, vm *VaultManager, connectionName string, theme Theme) Model {
+	tab := NewTab(db, dbType, sqlDir, sqlFile, initialSQL, connectionName, theme)
+
+	return Model{
+		tabs:         []*Tab{tab},
+		activeTab:    0,
+		focus:        focusQuery,
+		vaultManager: vm,
+		sqlDir:       sqlDir,
+	}
+}
+
+// activeTabPtr returns a pointer to the active tab
+func (m *Model) activeTabPtr() *Tab {
+	if m.activeTab >= 0 && m.activeTab < len(m.tabs) {
+		return m.tabs[m.activeTab]
+	}
+	return nil
+}
+
+// tab returns the active tab (for read-only access)
+func (m Model) tab() *Tab {
+	if m.activeTab >= 0 && m.activeTab < len(m.tabs) {
+		return m.tabs[m.activeTab]
+	}
+	return nil
 }
 
 // Init implements tea.Model
@@ -93,6 +111,11 @@ type editorFinishedMsg struct {
 
 // openInExternalEditor opens the SQL file in the user's $EDITOR
 func (m *Model) openInExternalEditor() tea.Cmd {
+	tab := m.activeTabPtr()
+	if tab == nil {
+		return nil
+	}
+
 	// Save current content before opening editor
 	m.saveToFile()
 
@@ -101,7 +124,7 @@ func (m *Model) openInExternalEditor() tea.Cmd {
 		editor = "vi" // fallback to vi if EDITOR not set
 	}
 
-	c := exec.Command(editor, m.sqlFile)
+	c := exec.Command(editor, tab.sqlFile)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return editorFinishedMsg{err: err}
 	})
@@ -110,6 +133,7 @@ func (m *Model) openInExternalEditor() tea.Cmd {
 // Update implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+	tab := m.activeTabPtr()
 
 	switch msg := msg.(type) {
 	case editorFinishedMsg:
@@ -126,7 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmingQuit {
 			switch msg.String() {
 			case "y", "Y":
-				m.saveToFile()
+				m.saveAllTabs()
 				return m, tea.Quit
 			case "n", "N":
 				return m, tea.Quit
@@ -142,7 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Global quit - works from any view
 		if msg.String() == "ctrl+q" || msg.String() == "ctrl+c" {
-			if m.hasUnsavedChanges() {
+			if m.hasUnsavedChangesAnyTab() {
 				m.confirmingQuit = true
 				m.statusMessage = "You have unsaved changes. Save before quitting? (y/n, Esc to cancel)"
 				return m, nil
@@ -153,7 +177,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global save - Ctrl+S
 		if msg.String() == "ctrl+s" {
 			m.saveToFile()
-			m.statusMessage = fmt.Sprintf("Saved to %s", m.sqlFile)
+			if tab != nil {
+				m.statusMessage = fmt.Sprintf("Saved to %s", tab.sqlFile)
+			}
 			return m, nil
 		}
 
@@ -165,11 +191,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Open in external editor - Ctrl+E
 		if msg.String() == "ctrl+e" {
-			if m.sqlFile == "" {
+			if tab == nil || tab.sqlFile == "" {
 				m.statusMessage = "No SQL file to edit"
 				return m, nil
 			}
 			return m, m.openInExternalEditor()
+		}
+
+		// New tab - Ctrl+T
+		if msg.String() == "ctrl+t" {
+			if m.vaultManager != nil {
+				m.creatingNewTab = true
+				m.openConnectionPicker()
+			} else {
+				m.statusMessage = "No vault configured - add connections with -add-conn"
+			}
+			return m, nil
+		}
+
+		// Switch tabs - Ctrl+Tab or Ctrl+PageDown (next), Ctrl+Shift+Tab or Ctrl+PageUp (prev)
+		if msg.String() == "ctrl+tab" || msg.String() == "ctrl+pgdown" {
+			if len(m.tabs) > 1 {
+				m.saveToFile() // Save current tab before switching
+				m.activeTab = (m.activeTab + 1) % len(m.tabs)
+				m.reloadFileFromDisk() // Reload the new tab's file
+				m.statusMessage = fmt.Sprintf("Tab %d: %s", m.activeTab+1, m.tabDisplayName(m.activeTab))
+			}
+			return m, nil
+		}
+		if msg.String() == "ctrl+shift+tab" || msg.String() == "ctrl+pgup" {
+			if len(m.tabs) > 1 {
+				m.saveToFile() // Save current tab before switching
+				m.activeTab = (m.activeTab - 1 + len(m.tabs)) % len(m.tabs)
+				m.reloadFileFromDisk() // Reload the new tab's file
+				m.statusMessage = fmt.Sprintf("Tab %d: %s", m.activeTab+1, m.tabDisplayName(m.activeTab))
+			}
+			return m, nil
+		}
+
+		// Close tab - Ctrl+W
+		if msg.String() == "ctrl+w" {
+			if len(m.tabs) > 1 {
+				m.closeCurrentTab()
+			} else {
+				m.statusMessage = "Cannot close the last tab"
+			}
+			return m, nil
 		}
 
 		// Handle file dialog keys
@@ -178,13 +245,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Handle connection picker keys
-		if m.focus == focusConnectionPicker && m.connectionPicker != nil {
+		if (m.focus == focusConnectionPicker || m.focus == focusNewTabPicker) && m.connectionPicker != nil {
 			return m.handleConnectionPickerKeys(msg)
 		}
 
-		// Open connection picker - Ctrl+P
+		// Open connection picker - Ctrl+P (switch connection for current tab)
 		if msg.String() == "ctrl+p" {
 			if m.vaultManager != nil {
+				m.creatingNewTab = false
 				m.openConnectionPicker()
 			} else {
 				m.statusMessage = "No vault configured - add connections with -add-conn"
@@ -193,25 +261,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Resize query window - works in results/banner view (not when typing in query)
-		if m.focus == focusResults {
+		if m.focus == focusResults && tab != nil {
 			switch msg.String() {
 			case "-":
 				// Shrink query window
-				h := m.textarea.Height()
+				h := tab.textarea.Height()
 				if h > 3 {
-					m.textarea.SetHeight(h - 1)
+					tab.textarea.SetHeight(h - 1)
 					m.statusMessage = fmt.Sprintf("Query window: %d lines", h-1)
 				}
 				return m, nil
 			case "+", "=":
 				// Grow query window
-				h := m.textarea.Height()
+				h := tab.textarea.Height()
 				maxHeight := m.height / 2 // Max half the screen
 				if maxHeight < 5 {
 					maxHeight = 5
 				}
 				if h < maxHeight {
-					m.textarea.SetHeight(h + 1)
+					tab.textarea.SetHeight(h + 1)
 					m.statusMessage = fmt.Sprintf("Query window: %d lines", h+1)
 				}
 				return m, nil
@@ -222,12 +290,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focus == focusResults && (msg.String() == "ctrl+r" || msg.String() == "f5") {
 			// Switch to query, execute, handled below
 			m.focus = focusQuery
-			m.textarea.Focus()
+			if tab != nil {
+				tab.textarea.Focus()
+			}
 			// Fall through to handle ctrl+r below
 		}
 
 		// Handle detail view keys first
-		if m.focus == focusDetail && m.detailView != nil {
+		if m.focus == focusDetail && tab != nil && tab.detailView != nil {
 			return m.handleDetailViewKeys(msg)
 		}
 
@@ -236,7 +306,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Esc goes back one level, doesn't quit
 			if m.focus == focusResults {
 				m.focus = focusQuery
-				m.textarea.Focus()
+				if tab != nil {
+					tab.textarea.Focus()
+				}
 			}
 			return m, nil
 
@@ -245,56 +317,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.focus {
 			case focusQuery:
 				m.focus = focusResults
-				m.textarea.Blur()
+				if tab != nil {
+					tab.textarea.Blur()
+				}
 			case focusResults:
 				m.focus = focusQuery
-				m.textarea.Focus()
+				if tab != nil {
+					tab.textarea.Focus()
+				}
 			}
 			return m, nil
 
 		case "enter":
 			// Open detail view when in results (not banner)
-			if m.focus == focusResults && m.result != nil && len(m.result.Rows) > 0 {
+			if m.focus == focusResults && tab != nil && tab.result != nil && len(tab.result.Rows) > 0 {
 				m.openDetailView()
 				return m, nil
 			}
 			// In banner view, Enter does nothing (no detail to show)
-			if m.focus == focusResults && m.result == nil {
+			if m.focus == focusResults && (tab == nil || tab.result == nil) {
 				return m, nil
 			}
 
 		case "ctrl+r", "f5":
+			if tab == nil {
+				return m, nil
+			}
 			// Execute the query under the cursor
 			query := m.getQueryUnderCursor()
 			if query == "" {
 				m.statusMessage = "No query under cursor. Queries must end with ';'"
 				return m, nil
 			}
-			m.lastQuery = query
-			m.result = executeQuery(m.db, query)
-			m.queryMeta = parseQueryMeta(query, m.result)
-			m.selectedRow = 0
-			m.currentPage = 0
+			tab.lastQuery = query
+			tab.result = executeQuery(tab.db, query)
+			tab.queryMeta = parseQueryMeta(query, tab.result)
+			tab.selectedRow = 0
+			tab.currentPage = 0
 			// Save the SQL file after executing
 			m.saveToFile()
-			if m.result.Error != nil {
-				m.statusMessage = fmt.Sprintf("Error: %v", m.result.Error)
+			if tab.result.Error != nil {
+				m.statusMessage = fmt.Sprintf("Error: %v", tab.result.Error)
 			} else {
-				m.totalPages = (len(m.result.Rows) + pageSize - 1) / pageSize
-				if m.totalPages == 0 {
-					m.totalPages = 1
+				tab.totalPages = (len(tab.result.Rows) + pageSize - 1) / pageSize
+				if tab.totalPages == 0 {
+					tab.totalPages = 1
 				}
-				m.statusMessage = fmt.Sprintf("Query returned %d rows", len(m.result.Rows))
-				if len(m.result.Rows) > 0 {
+				m.statusMessage = fmt.Sprintf("Query returned %d rows", len(tab.result.Rows))
+				if len(tab.result.Rows) > 0 {
 					m.focus = focusResults
-					m.textarea.Blur()
+					tab.textarea.Blur()
 				}
 			}
 			return m, nil
 		}
 
 		// Handle navigation in results view
-		if m.focus == focusResults && m.result != nil {
+		if m.focus == focusResults && tab != nil && tab.result != nil {
 			return m.handleResultsNavigation(msg)
 		}
 
@@ -302,14 +381,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Adjust textarea width
-		m.textarea.SetWidth(msg.Width - 4)
+		// Adjust textarea width for all tabs
+		for _, t := range m.tabs {
+			t.textarea.SetWidth(msg.Width - 4)
+		}
 
-		// On first window size, set textarea to 50% of height
+		// On first window size, set textarea to 50% of height for all tabs
 		if !m.ready {
 			// Calculate 50% of available height (minus chrome)
-			// Chrome: title (2 lines) + status bar (1) + help (1) + borders (~4)
-			chromeHeight := 8
+			// Chrome: title (2 lines) + tab bar (1) + status bar (1) + help (1) + borders (~4)
+			chromeHeight := 9
 			availableHeight := msg.Height - chromeHeight
 			targetHeight := availableHeight / 2
 			if targetHeight < 5 {
@@ -318,46 +399,117 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if targetHeight > 30 {
 				targetHeight = 30 // reasonable max
 			}
-			m.textarea.SetHeight(targetHeight)
+			for _, t := range m.tabs {
+				t.textarea.SetHeight(targetHeight)
+			}
 		}
 
 		m.ready = true
 
 		// Initialize viewport
-		headerHeight := 5 // title + query box + status
+		headerHeight := 6 // title + tab bar + query box + status
 		footerHeight := 2 // help text
-		m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight-m.textarea.Height())
+		textareaHeight := 8
+		if tab != nil {
+			textareaHeight = tab.textarea.Height()
+		}
+		m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight-textareaHeight)
 		m.viewport.YPosition = headerHeight
 
 		// Update detail view visible fields if open
-		if m.detailView != nil {
-			m.detailView.visibleFields = (msg.Height - 12) / 2
-			if m.detailView.visibleFields < 3 {
-				m.detailView.visibleFields = 3
+		if tab != nil && tab.detailView != nil {
+			tab.detailView.visibleFields = (msg.Height - 12) / 2
+			if tab.detailView.visibleFields < 3 {
+				tab.detailView.visibleFields = 3
 			}
 		}
 	}
 
 	// Update textarea if focused
-	if m.focus == focusQuery {
+	if m.focus == focusQuery && tab != nil {
 		var cmd tea.Cmd
-		m.textarea, cmd = m.textarea.Update(msg)
+		tab.textarea, cmd = tab.textarea.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
-// openDetailView creates the detail view for the selected row
-func (m *Model) openDetailView() {
-	if m.result == nil || m.selectedRow >= len(m.result.Rows) {
+// tabDisplayName returns a display name for a tab
+func (m Model) tabDisplayName(idx int) string {
+	if idx < 0 || idx >= len(m.tabs) {
+		return ""
+	}
+	tab := m.tabs[idx]
+	if tab.connectionName != "" {
+		return tab.connectionName
+	}
+	if tab.dbType != "" {
+		return tab.dbType
+	}
+	return "untitled"
+}
+
+// closeCurrentTab closes the active tab
+func (m *Model) closeCurrentTab() {
+	if len(m.tabs) <= 1 {
 		return
 	}
 
-	row := m.result.Rows[m.selectedRow]
-	inputs := make([]textinput.Model, len(m.result.Columns))
-	isNull := make([]bool, len(m.result.Columns))
-	originalValues := make([]CellValue, len(m.result.Columns))
+	tab := m.activeTabPtr()
+	if tab != nil {
+		// Save before closing
+		m.saveToFile()
+		// Close the database connection
+		if tab.db != nil {
+			_ = tab.db.Close()
+		}
+	}
+
+	// Remove the tab
+	m.tabs = append(m.tabs[:m.activeTab], m.tabs[m.activeTab+1:]...)
+
+	// Adjust active tab index
+	if m.activeTab >= len(m.tabs) {
+		m.activeTab = len(m.tabs) - 1
+	}
+
+	m.statusMessage = fmt.Sprintf("Tab closed. %d tab(s) open.", len(m.tabs))
+}
+
+// saveAllTabs saves all tabs' SQL files
+func (m *Model) saveAllTabs() {
+	for _, tab := range m.tabs {
+		if tab.sqlFile != "" {
+			content := tab.textarea.Value()
+			if err := os.WriteFile(tab.sqlFile, []byte(content), 0644); err == nil {
+				tab.lastSavedContent = content
+			}
+		}
+	}
+}
+
+// hasUnsavedChangesAnyTab checks if any tab has unsaved changes
+func (m Model) hasUnsavedChangesAnyTab() bool {
+	for _, tab := range m.tabs {
+		if tab.textarea.Value() != tab.lastSavedContent {
+			return true
+		}
+	}
+	return false
+}
+
+// openDetailView creates the detail view for the selected row
+func (m *Model) openDetailView() {
+	tab := m.activeTabPtr()
+	if tab == nil || tab.result == nil || tab.selectedRow >= len(tab.result.Rows) {
+		return
+	}
+
+	row := tab.result.Rows[tab.selectedRow]
+	inputs := make([]textinput.Model, len(tab.result.Columns))
+	isNull := make([]bool, len(tab.result.Columns))
+	originalValues := make([]CellValue, len(tab.result.Columns))
 
 	for i, cell := range row {
 		ti := textinput.New()
@@ -388,11 +540,11 @@ func (m *Model) openDetailView() {
 	}
 
 	// Copy column types
-	columnTypes := make([]ColumnType, len(m.result.ColumnTypes))
-	copy(columnTypes, m.result.ColumnTypes)
+	columnTypes := make([]ColumnType, len(tab.result.ColumnTypes))
+	copy(columnTypes, tab.result.ColumnTypes)
 
-	m.detailView = &DetailView{
-		rowIndex:       m.selectedRow,
+	tab.detailView = &DetailView{
+		rowIndex:       tab.selectedRow,
 		originalValues: originalValues,
 		inputs:         inputs,
 		isNull:         isNull,
@@ -433,11 +585,20 @@ func (m *Model) openConnectionPicker() {
 		m.connectionPicker.mode = PickerModeList
 	}
 
-	m.focus = focusConnectionPicker
+	if m.creatingNewTab {
+		m.focus = focusNewTabPicker
+	} else {
+		m.focus = focusConnectionPicker
+	}
 }
 
-// switchConnection switches to a different database connection
+// switchConnection switches the current tab to a different database connection
 func (m *Model) switchConnection(name string) error {
+	tab := m.activeTabPtr()
+	if tab == nil {
+		return fmt.Errorf("no active tab")
+	}
+
 	if m.vaultManager == nil {
 		return fmt.Errorf("no vault manager")
 	}
@@ -458,8 +619,8 @@ func (m *Model) switchConnection(name string) error {
 	}
 
 	// Close old connection
-	if m.db != nil {
-		_ = m.db.Close()
+	if tab.db != nil {
+		_ = tab.db.Close()
 	}
 
 	// Open new connection
@@ -473,15 +634,76 @@ func (m *Model) switchConnection(name string) error {
 		return fmt.Errorf("failed to ping: %w", err)
 	}
 
-	m.db = db
-	m.dbType = dbType
-	m.connectionName = name
-	m.theme = GetTheme(themeName)
-	m.highlighter = NewSQLHighlighter(m.theme)
+	tab.db = db
+	tab.dbType = dbType
+	tab.connectionName = name
+	tab.theme = GetTheme(themeName)
+	tab.highlighter = NewSQLHighlighter(tab.theme)
 
 	// Clear previous results
-	m.result = nil
-	m.queryMeta = nil
+	tab.result = nil
+	tab.queryMeta = nil
+
+	return nil
+}
+
+// createNewTab creates a new tab with the given connection
+func (m *Model) createNewTab(name string) error {
+	if m.vaultManager == nil {
+		return fmt.Errorf("no vault manager")
+	}
+
+	dsn, dbType, themeName, err := m.vaultManager.GetConnection(name)
+	if err != nil {
+		return err
+	}
+
+	// Auto-detect type if not specified
+	if dbType == "" {
+		dbType = detectDBType(dsn)
+	}
+
+	driverName := getDriverName(dbType)
+	if driverName == "" {
+		return fmt.Errorf("unknown database type for %q", name)
+	}
+
+	// Open new connection
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("failed to ping: %w", err)
+	}
+
+	// Determine SQL file path for this connection
+	dbName := extractDatabaseName(dsn, dbType)
+	sqlFile := dbName + ".sql"
+	if m.sqlDir != "" {
+		sqlFile = m.sqlDir + "/" + sqlFile
+	}
+
+	// Load initial SQL content from file (if it exists)
+	var initialSQL string
+	if data, err := os.ReadFile(sqlFile); err == nil {
+		initialSQL = string(data)
+	}
+
+	theme := GetTheme(themeName)
+	tab := NewTab(db, dbType, m.sqlDir, sqlFile, initialSQL, name, theme)
+
+	// Size the textarea to match current tabs
+	if len(m.tabs) > 0 && m.tabs[0].textarea.Height() > 0 {
+		tab.textarea.SetHeight(m.tabs[0].textarea.Height())
+		tab.textarea.SetWidth(m.tabs[0].textarea.Width())
+	}
+
+	// Add the new tab and switch to it
+	m.tabs = append(m.tabs, tab)
+	m.activeTab = len(m.tabs) - 1
 
 	return nil
 }

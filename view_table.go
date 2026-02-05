@@ -9,6 +9,7 @@ import (
 // renderBanner renders the startup ASCII art banner
 func (m Model) renderBanner() string {
 	styles := m.GetStyles()
+	tab := m.tab()
 
 	// ASCII art for "dibber"
 	banner := []string{
@@ -20,12 +21,16 @@ func (m Model) renderBanner() string {
 	}
 
 	// Use theme colors for gradient effect
+	theme := DefaultTheme
+	if tab != nil {
+		theme = tab.theme
+	}
 	colors := []lipgloss.Color{
-		m.theme.Danger,     // line 1
-		m.theme.Warning,    // line 2
-		m.theme.Success,    // line 3
-		m.theme.Primary,    // line 4
-		m.theme.SyntaxNull, // line 5
+		theme.Danger,     // line 1
+		theme.Warning,    // line 2
+		theme.Success,    // line 3
+		theme.Primary,    // line 4
+		theme.SyntaxNull, // line 5
 	}
 
 	var b strings.Builder
@@ -42,7 +47,7 @@ func (m Model) renderBanner() string {
 
 	// Tagline
 	tagline := lipgloss.NewStyle().
-		Foreground(m.theme.TextDim).
+		Foreground(theme.TextDim).
 		Italic(true).
 		Render("        A terminal database client")
 	b.WriteString("\n")
@@ -59,25 +64,26 @@ func (m Model) renderBanner() string {
 
 // renderTable renders the results as a table
 func (m Model) renderTable() string {
-	if m.result == nil || len(m.result.Columns) == 0 {
+	tab := m.tab()
+	if tab == nil || tab.result == nil || len(tab.result.Columns) == 0 {
 		return ""
 	}
 
 	styles := m.GetStyles()
 
 	// Calculate column widths
-	colWidths := make([]int, len(m.result.Columns))
-	for i, col := range m.result.Columns {
+	colWidths := make([]int, len(tab.result.Columns))
+	for i, col := range tab.result.Columns {
 		colWidths[i] = len(col)
 	}
 
 	// Get page slice
-	startIdx := m.currentPage * pageSize
+	startIdx := tab.currentPage * pageSize
 	endIdx := startIdx + pageSize
-	if endIdx > len(m.result.Rows) {
-		endIdx = len(m.result.Rows)
+	if endIdx > len(tab.result.Rows) {
+		endIdx = len(tab.result.Rows)
 	}
-	pageRows := m.result.Rows[startIdx:endIdx]
+	pageRows := tab.result.Rows[startIdx:endIdx]
 
 	// Update widths based on data (limit to reasonable max)
 	maxColWidth := 40
@@ -101,7 +107,7 @@ func (m Model) renderTable() string {
 
 	// Header
 	var headerCells []string
-	for i, col := range m.result.Columns {
+	for i, col := range tab.result.Columns {
 		cell := truncateString(col, colWidths[i])
 		cell = padRight(cell, colWidths[i])
 		headerCells = append(headerCells, styles.TableHeader.Render(cell))
@@ -126,7 +132,7 @@ func (m Model) renderTable() string {
 			cellStr := truncateString(displayVal, colWidths[i])
 			cellStr = padRight(cellStr, colWidths[i])
 
-			isSelected := actualRowIdx == m.selectedRow && m.focus == focusResults
+			isSelected := actualRowIdx == tab.selectedRow && m.focus == focusResults
 
 			if cell.IsNull {
 				// NULL values get special styling

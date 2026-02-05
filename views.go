@@ -10,17 +10,22 @@ import (
 
 // renderHighlightedQuery renders the query textarea content with SQL syntax highlighting
 func (m Model) renderHighlightedQuery() string {
-	content := m.textarea.Value()
+	tab := m.tab()
+	if tab == nil {
+		return ""
+	}
+
+	content := tab.textarea.Value()
 	lines := strings.Split(content, "\n")
 
 	// Get cursor position
-	cursorLine := m.textarea.Line()
-	lineInfo := m.textarea.LineInfo()
+	cursorLine := tab.textarea.Line()
+	lineInfo := tab.textarea.LineInfo()
 	cursorCol := lineInfo.CharOffset
 
 	// Get textarea dimensions
-	height := m.textarea.Height()
-	width := m.textarea.Width()
+	height := tab.textarea.Height()
+	width := tab.textarea.Width()
 
 	// Calculate scroll offset - keep cursor visible
 	scrollOffset := 0
@@ -36,26 +41,26 @@ func (m Model) renderHighlightedQuery() string {
 
 	// Calculate content width (excluding line numbers)
 	contentWidth := width
-	if m.textarea.ShowLineNumbers {
+	if tab.textarea.ShowLineNumbers {
 		contentWidth = width - lineNumWidth - 1 // -1 for space after line number
 	}
 
 	// Styles for line numbers
 	lineNumStyle := lipgloss.NewStyle().
-		Foreground(m.theme.TextDim).
+		Foreground(tab.theme.TextDim).
 		Width(lineNumWidth).
 		Align(lipgloss.Right)
 
 	cursorLineNumStyle := lipgloss.NewStyle().
-		Foreground(m.theme.Primary).
+		Foreground(tab.theme.Primary).
 		Bold(true).
 		Width(lineNumWidth).
 		Align(lipgloss.Right)
 
 	// Cursor style
 	cursorStyle := lipgloss.NewStyle().
-		Background(m.theme.TextBright).
-		Foreground(m.theme.Secondary)
+		Background(tab.theme.TextBright).
+		Foreground(tab.theme.Secondary)
 
 	var b strings.Builder
 	isFocused := m.focus == focusQuery
@@ -65,7 +70,7 @@ func (m Model) renderHighlightedQuery() string {
 		line := lines[i]
 
 		// Line number
-		if m.textarea.ShowLineNumbers {
+		if tab.textarea.ShowLineNumbers {
 			if i == cursorLine {
 				b.WriteString(cursorLineNumStyle.Render(fmt.Sprintf("%d", i+1)))
 			} else {
@@ -79,12 +84,12 @@ func (m Model) renderHighlightedQuery() string {
 		isCursorLine := isFocused && i == cursorLine
 		cursorAtEnd := isCursorLine && cursorCol >= len([]rune(line))
 
-		if m.highlighter != nil {
-			highlightedLine := m.highlighter.HighlightLine(line)
+		if tab.highlighter != nil {
+			highlightedLine := tab.highlighter.HighlightLine(line)
 
 			// If this is the cursor line and we're focused, insert cursor
 			if isCursorLine {
-				renderedLine = m.insertCursor(line, highlightedLine, cursorCol, cursorStyle, contentWidth)
+				renderedLine = m.insertCursor(tab, line, highlightedLine, cursorCol, cursorStyle, contentWidth)
 			} else {
 				renderedLine = highlightedLine
 			}
@@ -119,7 +124,7 @@ func (m Model) renderHighlightedQuery() string {
 		linesRendered = height
 	}
 	for i := linesRendered; i < height; i++ {
-		if m.textarea.ShowLineNumbers {
+		if tab.textarea.ShowLineNumbers {
 			b.WriteString(strings.Repeat(" ", lineNumWidth+1))
 		}
 		// Pad empty lines to full width
@@ -133,7 +138,7 @@ func (m Model) renderHighlightedQuery() string {
 }
 
 // insertCursor inserts a cursor character into a highlighted line at the correct position
-func (m Model) insertCursor(plainLine, highlightedLine string, cursorCol int, cursorStyle lipgloss.Style, maxWidth int) string {
+func (m Model) insertCursor(tab *Tab, plainLine, highlightedLine string, cursorCol int, cursorStyle lipgloss.Style, maxWidth int) string {
 	// If cursor is at or past end of line, append cursor block
 	plainRunes := []rune(plainLine)
 	if cursorCol >= len(plainRunes) {
@@ -150,12 +155,16 @@ func (m Model) insertCursor(plainLine, highlightedLine string, cursorCol int, cu
 
 	// Highlight each part
 	var result strings.Builder
-	if beforeCursor != "" {
-		result.WriteString(m.highlighter.HighlightLine(beforeCursor))
+	if beforeCursor != "" && tab.highlighter != nil {
+		result.WriteString(tab.highlighter.HighlightLine(beforeCursor))
+	} else if beforeCursor != "" {
+		result.WriteString(beforeCursor)
 	}
 	result.WriteString(cursorStyle.Render(cursorChar))
-	if afterCursor != "" {
-		result.WriteString(m.highlighter.HighlightLine(afterCursor))
+	if afterCursor != "" && tab.highlighter != nil {
+		result.WriteString(tab.highlighter.HighlightLine(afterCursor))
+	} else if afterCursor != "" {
+		result.WriteString(afterCursor)
 	}
 
 	return m.truncateLine(result.String(), maxWidth)
@@ -206,8 +215,10 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
+	tab := m.tab()
+
 	// Show detail view if active
-	if m.focus == focusDetail && m.detailView != nil {
+	if m.focus == focusDetail && tab != nil && tab.detailView != nil {
 		return m.renderDetailView()
 	}
 
@@ -216,8 +227,8 @@ func (m Model) View() string {
 		return m.renderFileDialog()
 	}
 
-	// Show connection picker if active
-	if m.focus == focusConnectionPicker && m.connectionPicker != nil {
+	// Show connection picker if active (for both existing tab switch and new tab)
+	if (m.focus == focusConnectionPicker || m.focus == focusNewTabPicker) && m.connectionPicker != nil {
 		return m.renderConnectionPicker()
 	}
 
@@ -226,14 +237,20 @@ func (m Model) View() string {
 
 	// Calculate heights
 	// Title: 1 line + 1 blank = 2
+	// Tab bar: 1 line + 1 blank = 2
 	// Query box: textarea height + 2 (border) + 1 blank = textarea.Height() + 3
 	// Status bar: 1 line
 	// Help: 1 line
 	titleHeight := 2
-	queryBoxHeight := m.textarea.Height() + 4 // includes border padding and blank line
+	tabBarHeight := 2
+	textareaHeight := 8
+	if tab != nil {
+		textareaHeight = tab.textarea.Height()
+	}
+	queryBoxHeight := textareaHeight + 4 // includes border padding and blank line
 	statusHeight := 1
 	helpHeight := 1
-	tableHeight := m.height - titleHeight - queryBoxHeight - statusHeight - helpHeight
+	tableHeight := m.height - titleHeight - tabBarHeight - queryBoxHeight - statusHeight - helpHeight
 
 	if tableHeight < 3 {
 		tableHeight = 3
@@ -241,18 +258,13 @@ func (m Model) View() string {
 
 	var b strings.Builder
 
-	// Title - show connection name and theme if using saved connection
+	// Title
 	titleText := "🌱  Dibber - Database Client"
-	if m.connectionName != "" {
-		if m.theme.Name != "" && m.theme.Name != "default" {
-			titleText = fmt.Sprintf("🌱  Dibber - %s (%s) [%s]", m.connectionName, m.dbType, m.theme.Name)
-		} else {
-			titleText = fmt.Sprintf("🌱  Dibber - %s (%s)", m.connectionName, m.dbType)
-		}
-	} else if m.dbType != "" {
-		titleText = fmt.Sprintf("🌱  Dibber - %s", m.dbType)
-	}
 	b.WriteString(styles.Title.Render(titleText))
+	b.WriteString("\n\n")
+
+	// Tab bar
+	b.WriteString(m.renderTabBar())
 	b.WriteString("\n\n")
 
 	// Query input with syntax highlighting
@@ -267,10 +279,10 @@ func (m Model) View() string {
 	var tableContent string
 	resultsFocused := m.focus == focusResults
 
-	if m.result != nil {
-		if m.result.Error != nil {
-			tableContent = styles.Error.Render(fmt.Sprintf("Error: %v", m.result.Error))
-		} else if len(m.result.Rows) > 0 {
+	if tab != nil && tab.result != nil {
+		if tab.result.Error != nil {
+			tableContent = styles.Error.Render(fmt.Sprintf("Error: %v", tab.result.Error))
+		} else if len(tab.result.Rows) > 0 {
 			tableContent = m.renderTable()
 		} else {
 			tableContent = "Query executed successfully. No rows returned."
@@ -296,17 +308,17 @@ func (m Model) View() string {
 
 	// Status bar
 	statusText := m.statusMessage
-	if m.result != nil && len(m.result.Rows) > 0 {
+	if tab != nil && tab.result != nil && len(tab.result.Rows) > 0 {
 		editableText := ""
-		if m.queryMeta != nil {
-			if m.queryMeta.IsEditable {
+		if tab.queryMeta != nil {
+			if tab.queryMeta.IsEditable {
 				editableText = " [Editable]"
 			} else {
 				editableText = " [Read-only]"
 			}
 		}
 		statusText = fmt.Sprintf("%s%s | Page %d/%d | Row %d/%d",
-			m.statusMessage, editableText, m.currentPage+1, m.totalPages, m.selectedRow+1, len(m.result.Rows))
+			m.statusMessage, editableText, tab.currentPage+1, tab.totalPages, tab.selectedRow+1, len(tab.result.Rows))
 	}
 	b.WriteString(styles.StatusBar.Width(m.width).Render(statusText))
 	b.WriteString("\n")
@@ -315,17 +327,77 @@ func (m Model) View() string {
 	var helpText string
 	switch m.focus {
 	case focusQuery:
-		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+O: Open | Ctrl+E: Editor | Ctrl+P: Connections | Tab: Switch | Ctrl+Q: Quit"
+		helpText = "Ctrl+R: Run | Ctrl+T: New Tab | Ctrl+Tab: Switch Tab | Ctrl+W: Close Tab | Ctrl+Q: Quit"
 	case focusResults:
-		if m.result != nil && len(m.result.Rows) > 0 {
-			helpText = "↑↓: Navigate | Enter: Detail | -/+: Resize | Tab: Switch | Ctrl+E: Editor | Ctrl+Q: Quit"
+		if tab != nil && tab.result != nil && len(tab.result.Rows) > 0 {
+			helpText = "↑↓: Navigate | Enter: Detail | -/+: Resize | Tab: Switch | Ctrl+Q: Quit"
 		} else {
-			helpText = "-/+: Resize | Tab: Switch | Ctrl+R: Run | Ctrl+E: Editor | Ctrl+Q: Quit"
+			helpText = "-/+: Resize | Tab: Switch | Ctrl+R: Run | Ctrl+Q: Quit"
 		}
 	default:
-		helpText = "Ctrl+R: Run | Ctrl+S: Save | Ctrl+E: Editor | Ctrl+P: Connections | Tab: Switch | Ctrl+Q: Quit"
+		helpText = "Ctrl+R: Run | Ctrl+T: New Tab | Ctrl+Tab: Switch Tab | Ctrl+P: Connections | Ctrl+Q: Quit"
 	}
 	b.WriteString(styles.Help.Render(helpText))
+
+	return b.String()
+}
+
+// renderTabBar renders the tab bar showing all open tabs
+func (m Model) renderTabBar() string {
+	if len(m.tabs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+
+	for i, tab := range m.tabs {
+		// Determine tab label
+		label := tab.connectionName
+		if label == "" {
+			label = tab.dbType
+		}
+		if label == "" {
+			label = "untitled"
+		}
+
+		// Truncate long labels
+		if len(label) > 15 {
+			label = label[:12] + "..."
+		}
+
+		// Style based on whether this is the active tab
+		var tabStyle lipgloss.Style
+		if i == m.activeTab {
+			tabStyle = lipgloss.NewStyle().
+				Background(tab.theme.Primary).
+				Foreground(tab.theme.TextBright).
+				Bold(true).
+				Padding(0, 1)
+		} else {
+			tabStyle = lipgloss.NewStyle().
+				Background(tab.theme.Secondary).
+				Foreground(tab.theme.TextNormal).
+				Padding(0, 1)
+		}
+
+		// Add tab number for quick reference
+		tabLabel := fmt.Sprintf("%d: %s", i+1, label)
+		b.WriteString(tabStyle.Render(tabLabel))
+
+		// Add separator between tabs
+		if i < len(m.tabs)-1 {
+			b.WriteString(" ")
+		}
+	}
+
+	// Add hint for new tab
+	if len(m.tabs) < 9 {
+		newTabStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			Padding(0, 1)
+		b.WriteString(" ")
+		b.WriteString(newTabStyle.Render("[+]"))
+	}
 
 	return b.String()
 }
@@ -369,7 +441,11 @@ func (m Model) renderConnectionPicker() string {
 		b.WriteString(styles.Help.Render("Enter: Unlock | Esc: Cancel"))
 
 	case PickerModeList:
-		b.WriteString(styles.Title.Render("🔌  Connection Manager"))
+		if m.creatingNewTab {
+			b.WriteString(styles.Title.Render("🔌  Select Connection for New Tab"))
+		} else {
+			b.WriteString(styles.Title.Render("🔌  Connection Manager"))
+		}
 		b.WriteString("\n\n")
 
 		if len(m.connectionPicker.connections) == 0 {
@@ -401,13 +477,18 @@ func (m Model) renderConnectionPicker() string {
 
 		m.renderPickerError(&b, styles)
 
-		if m.connectionName != "" {
-			b.WriteString(fmt.Sprintf("\n  Current: %s", m.connectionName))
+		tab := m.tab()
+		if tab != nil && tab.connectionName != "" {
+			b.WriteString(fmt.Sprintf("\n  Current: %s", tab.connectionName))
 		}
 
 		b.WriteString("\n\n")
 		if len(m.connectionPicker.connections) > 0 {
-			b.WriteString(styles.Help.Render("↑↓: Navigate | Enter: Connect | a: Add | d: Delete | Esc: Close"))
+			if m.creatingNewTab {
+				b.WriteString(styles.Help.Render("↑↓: Navigate | Enter: Open in new tab | Esc: Cancel"))
+			} else {
+				b.WriteString(styles.Help.Render("↑↓: Navigate | Enter: Connect | a: Add | d: Delete | Esc: Close"))
+			}
 		} else {
 			b.WriteString(styles.Help.Render("a: Add Connection | Esc: Close"))
 		}
