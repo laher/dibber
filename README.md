@@ -7,7 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/laher/dibber.svg)](https://pkg.go.dev/github.com/laher/dibber)
 [![License](https://img.shields.io/github/license/laher/dibber)](LICENSE)
 
-**Dibber is a terminal-based SQL client with data editing capabilities.**
+**Dibber is a terminal-based SQL notebook with data editing capabilities.**
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), dibber provides an interactive TUI for exploring and modifying data across MySQL, PostgreSQL, and SQLite databases. It also supports a non-interactive pipe mode for scripting and automation.
 
@@ -428,6 +428,7 @@ Dibber supports multiple tabs, each with its own database connection, query edit
 - **Close Tab (`Ctrl+W`)**: Closes the current tab (cannot close the last tab)
 
 Each tab has its own:
+
 - Database connection
 - SQL file (based on database name)
 - Query editor state
@@ -558,19 +559,31 @@ It's also a somewhat childish soundalike for "d-b" (database).
 
 ## TODOs
 
+These features are needed to reach a stable 0.0.1 release:
+
 - [x] Make it optional to encrypt DSNs in config file. e.g. local databases often don't need it (and therefore, no need for entering encryption password)
 - [x] Pipe mode - support multiple queries from stdin.
 - [x] Different default file per named connection? configurable (so that connections can share if needed)
 - [x] Tabs for multiple connections (Ctrl+T to create, Ctrl+Tab to switch, Ctrl+W to close)
-- [ ] Refine the concept of 'modal editor' - <Esc> to go to results view, providing more key mappings (without <Ctrl>) while in results view.
-- [ ] Menus
-- [ ] feature - 'rollover' sql file to back up sql file and clear it
 - [x] Improve cursor -
   - ~~- [ ] support multiline selection in editor~~ (cancelled bc bubbletea's text area doesn't support multiline selection,
 and implementing it would be a major project in itself)
   - [x] open external editor instead
   - [ ] external editor for blob fields (json, text, etc)
+- [ ] Key mappings review:
+  - [ ] Refine the concept of 'modal editor' - <Esc> to go to results view, providing more key mappings (without <Ctrl>) while in results view.
+  - [ ] Consider adding vim-like keybindings for navigation (h/j/k/l, gg/G, etc)
+  as an option
+  - [ ] Consider making keys configurable via the config file.
+  - [ ] Make an easy 'help window' which shows mappings
+- [ ] Review resource consumption
+  - [ ] Are connections being closed properly?
+  - [ ] What happens when disconnected from db? Does it crash? Does it show an
+  error message?
+- [ ] feature - 'rollover' sql file to back up sql file and clear it
 - [ ] Export results to csv/table/tsv. Maybe json,yaml too?
+- [ ] releases
+  - [ ] goreleaser? or some other release automation?
 
 ### Later (after 0.0.1)
 
@@ -583,8 +596,7 @@ and implementing it would be a major project in itself)
 - [ ] docker-based tests for different dbs?
 - [ ] [maybe] add more databases?
 - [ ] [maybe] conditional compilation of cgo drivers
-- [ ] releases
-  - [ ] goreleaser? or some other release automation?
+- [ ] Menus?
 
 ## License
 
